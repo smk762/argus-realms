@@ -1,0 +1,57 @@
+Argus Realms
+Copyright (c) 2026 dragonhound
+
+The source code in this repository is licensed under the MIT License (see LICENSE),
+except for the brand assets and third-party material listed below.
+
+BRAND ASSETS (not covered by the MIT License; all rights reserved)
+
+  site/favicon.ico, site/icon.svg, site/icon-192.png, site/icon-512.png,
+  site/apple-icon.png
+      The argus-atlas favicon set, from the Argus brand kit, copied unchanged.
+
+  site/vendor/dh/dh-mark.svg and the mark embedded in site/vendor/dh/dh-strip.html,
+  site/vendor/dh/dh-strip.mjs and site/dragonhound-console.js
+      The Dragonhound Labs mark.
+
+  The names "Argus", "Argus Realms" and "Dragonhound Labs" and their marks.
+
+  You may not reuse these assets in your own projects. Forks should replace them.
+
+VENDORED CODE
+
+  site/vendor/dh/
+      The Dragonhound shared design layer (dh-shared), vendored unchanged from
+      https://dragonhound.dev/brand/v1/ and pinned by .dh-shared.json.
+
+  MapLibre GL JS is loaded from cdnjs at runtime and is not redistributed here
+  (BSD-3-Clause, https://github.com/maplibre/maplibre-gl-js).
+
+DATA
+
+  OpenStreetMap
+      Map data (c) OpenStreetMap contributors, available under the Open Database
+      License (ODbL) 1.0: https://www.openstreetmap.org/copyright
+      Used for the map controls the paintings are made from (water, rivers, roads,
+      forest, urban areas, glaciers), the place names, and the sea masks in
+      data/masks/ (derived from the OpenFreeMap vector tiles, OpenMapTiles schema).
+      The painted tiles are a Produced Work under the ODbL; the demo credits
+      OpenStreetMap in its map attribution.
+
+  OpenFreeMap / OpenMapTiles
+      Basemap style, glyphs and vector tiles served by https://openfreemap.org/
+      (OpenMapTiles schema, https://openmaptiles.org/), loaded at runtime.
+
+  Copernicus DEM GLO-30
+      (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018,
+      provided under COPERNICUS by the European Union and ESA; all rights reserved.
+      Used as the terrain the paintings are made from. No DEM data is stored in
+      this repository.
+
+  Natural Earth
+      data/nz_mainland.geojson is derived from Natural Earth 10m admin 0 countries
+      (public domain): https://www.naturalearthdata.com/
+
+  drand
+      The shared-world tick reads public randomness from the drand quicknet
+      network (https://drand.love/); no drand data is redistributed here.

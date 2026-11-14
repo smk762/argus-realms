@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Realms</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 29 9.5v13L16 30 3 22.5v-13z' fill='%23e0a84f'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="panel" hidden>
+    <div id="title">
+      <div class="title-row"><h1>Atlas Realms</h1><span id="clock"></span></div>
+      <section id="options" class="buttons">
+        <label>Map <select id="style"></select></label>
+        <label>Speed <select id="speed">
+          <option value="4">0.25×</option><option value="2">0.5×</option><option value="1">1×</option>
+          <option value="0.5">2×</option><option value="0.25">4×</option>
+        </select></label>
+        <label title="When this tab is hidden or closed, or after 5 minutes without input; undone when you're back">
+          Away <select id="away"><option value="play">play on</option><option value="pause">pause</option>
+          <option value="shield">shield</option></select></label>
+        <button id="pause">Pause</button>
+        <button id="quit" title="End this game and start a new one">New game</button>
+      </section>
+    </div>
+
+    <aside id="sidebar">
+      <nav class="tabs">
+        <button data-tab="players" class="on">Players</button>
+        <button data-tab="cities">Cities</button>
+        <button data-tab="battles">Battles</button>
+        <button data-tab="nemesis">Rivals</button>
+      </nav>
+      <div class="pane" id="pane-players"><ul id="players"></ul></div>
+      <div class="pane" id="pane-cities" hidden>
+        <div class="row small" id="cities-summary"></div>
+        <ul id="cities"></ul>
+      </div>
+      <div class="pane" id="pane-nemesis" hidden>
+        <section id="my-nemesis" class="patron">
+          <div class="row"><strong>Your nemesis</strong><span class="tag">patron</span></div>
+          <p class="small">+5% attack and defence in your fights with them. Subscribers, bots or a clan; change once a game day.</p>
+          <div class="row"><select id="nemesis-pick"></select><button id="nemesis-set">Set</button></div>
+          <div class="row small"><span id="nemesis-note"></span><button id="hunt">Hunt</button></div>
+        </section>
+        <h4>Contracts</h4>
+        <ul id="contracts" class="small"></ul>
+        <h4>Nemesis table</h4>
+        <table id="nemesis-table">
+          <thead><tr><th>Target</th><th>Hunted by</th><th>#</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pane" id="pane-battles" hidden>
+        <div id="battle-views" class="buttons"><button data-view="recent">Recent</button><button data-view="mine">Mine</button><button id="news" title="The news from the last six game hours">News</button></div>
+        <ul id="battles" class="small"></ul>
+      </div>
+    </aside>
+
+    <footer id="bar">
+      <div class="bar-row">
+        <section id="me">
+          <div class="row">
+            <strong id="me-name"></strong><span id="me-class" class="tag"></span><span id="me-coins" class="small"></span>
+          </div>
+          <div class="hp"><div id="me-hp-bar"></div><span id="me-hp"></span></div>
+          <div id="me-status" class="small"></div>
+        </section>
+        <section id="orders" class="buttons" title="Click a hex to move there; click one with units or a city, or right-click, for more.">
+          <span id="modes" class="buttons">
+            <button data-mode="none">Walk</button>
+            <button data-mode="double_march">March</button>
+            <button data-mode="heal">Heal</button>
+            <button id="stop">Stop</button>
+            <button id="shield">Shield</button><button id="shield-opts" title="Shield options">⚙</button>
+          </span>
+          <span class="sep"></span>
+          <select id="swap"></select>
+          <button id="swap-go">Swap class</button>
+        </section>
+      </div>
+      <div id="attribution"></div>
+    </footer>
+  </div>
+
+  <div id="ctx" hidden></div>
+  <div id="toast" hidden></div>
+
+  <dialog id="start">
+    <form method="dialog" id="start-form">
+      <h1>Atlas Realms</h1>
+      <p>Solo arena: you against bots around Cook Strait. Each bot has its own personality and class.</p>
+      <label>Name <input name="name" value="You" maxlength="24" required></label>
+      <label>Class <select name="unit_class" id="start-class"></select></label>
+      <p id="class-blurb" class="small"></p>
+      <fieldset id="start-bots"><legend>Bots</legend></fieldset>
+      <label title="Try the patron perks: shield looks, a shield schedule, and your full battle history with replays">Patron perks (preview)
+        <input type="checkbox" name="subscriber"></label>
+      <button type="submit">Start</button>
+    </form>
+  </dialog>
+
+  <dialog id="report">
+    <form method="dialog">
+      <div id="report-kicker" class="small"></div>
+      <h2 id="report-headline"></h2>
+      <p id="report-lead" class="small"></p>
+      <div id="report-stories"></div>
+      <button value="close">Back to the war</button>
+    </form>
+  </dialog>
+
+  <dialog id="hire">
+    <form method="dialog">
+      <h1 id="hire-title"></h1>
+      <p id="hire-note" class="small"></p>
+      <div id="hire-options"></div>
+      <label id="hire-target-row">Mercenary target <select id="hire-target"></select></label>
+      <label>Start <span class="buttons"><select id="hire-when"><option value="now">when it's free</option>
+        <option value="at">at</option></select><input type="time" id="hire-at" value="22:00"></span></label>
+      <p class="small">Prices follow your income against the average (you pay <span id="hire-factor"></span>× list).
+        While hired, the bot won't fight you, and loot from its kills is split with you.</p>
+      <button value="close">Close</button>
+    </form>
+  </dialog>
+
+  <dialog id="shield-dialog">
+    <form method="dialog">
+      <h1>Shield</h1>
+      <p id="shield-rules" class="small"></p>
+      <section class="patron">
+        <strong>Schedule</strong> <span class="tag">patron</span>
+        <p class="small">Raise and drop it at set game times, from the same daily hours.</p>
+        <div class="row"><label>From <input type="time" id="shield-from"></label><label>to <input type="time" id="shield-to"></label></div>
+        <div class="row"><span id="shield-schedule-now" class="small"></span>
+          <span class="buttons"><button type="button" id="shield-clear">Clear</button><button type="button" id="shield-save">Save</button></span></div>
+      </section>
+      <section class="patron">
+        <strong>Look</strong> <span class="tag">patron</span>
+        <div id="shield-looks" class="buttons"></div>
+      </section>
+      <button value="close">Close</button>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

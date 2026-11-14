@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "atlas-realms"
+dynamic = ["version"]
+description = "A tick-based territory game on an H3 hex grid over maps painted by argus-atlas"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "dragonhound" }]
+dependencies = [
+    # Base install is pure Python (no GDAL): the server uses it for chunk addressing only.
+    "argus-atlas>=0.2.0a1,<0.3",
+    "h3>=4.1",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.27", "pmtiles>=3.3", "pillow>=10.0"]
+# httpx2 backs starlette's TestClient (the httpx path is deprecated), as in argus-atlas.
+dev = ["pytest>=8.0", "ruff==0.15.16", "httpx>=0.27", "httpx2>=2.7"]
+
+[tool.hatch.version]
+source = "vcs"
+# No tags yet: start at 0.0.0 rather than failing the build.
+fallback-version = "0.0.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/atlas_realms/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlas_realms"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: statistical checks that run many battles"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["src/atlas_realms/_version.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]

@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+*.pyc
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+# hatch-vcs writes this at build time (version derived from git tags)
+src/atlas_realms/_version.py
+
+# Local data: copied tile archives, exported tiles
+var/
+
+# Local screenshots for review
+review/
+
+# Local copy from `npx modern-web-guidance install`; the plugin is enabled in .claude/settings.json
+.claude/skills/
+skills-lock.json
+
+# Wrangler (Cloudflare Pages deploys) local cache
+.wrangler/
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/

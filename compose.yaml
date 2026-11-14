@@ -1,0 +1,20 @@
+# Local development database. `make db-up`, then `make migrate`.
+services:
+  db:
+    build: db
+    image: atlas-realms-db:dev
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas_realms
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "atlas", "-d", "atlas_realms"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  pgdata:
