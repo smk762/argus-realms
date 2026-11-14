@@ -90,7 +90,7 @@ node site/vendor/dh/sync-shared.mjs --check .
 
 ## Data and attribution
 
-- Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the [ODbL](https://opendatacommons.org/licenses/odbl/). It covers the water, roads, forest and glacier controls the paintings are made from, the place names, the sea masks in `data/masks/`, and the OpenFreeMap basemap.
+- Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the [ODbL](https://opendatacommons.org/licenses/odbl/). It covers the water, roads, forest and glacier controls the paintings are made from, the place names, the sea masks in `data/masks/` (themselves ODbL, not MIT), and the OpenFreeMap basemap.
 - Terrain: [Copernicus DEM GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model), © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA.
 - Basemap: [OpenFreeMap](https://openfreemap.org/), [OpenMapTiles](https://openmaptiles.org/) schema.
 - `data/nz_mainland.geojson`: [Natural Earth](https://www.naturalearthdata.com/), public domain.

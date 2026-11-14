@@ -35,8 +35,10 @@ DATA
       Used for the map controls the paintings are made from (water, rivers, roads,
       forest, urban areas, glaciers), the place names, and the sea masks in
       data/masks/ (derived from the OpenFreeMap vector tiles, OpenMapTiles schema).
-      The painted tiles are a Produced Work under the ODbL; the demo credits
-      OpenStreetMap in its map attribution.
+      The sea masks in data/masks/ are a Derivative Database of OpenStreetMap
+      and are licensed under the ODbL 1.0, not the MIT License. The painted
+      tiles (not stored here) are a Produced Work under the ODbL; the demo
+      credits OpenStreetMap in its map attribution.
 
   OpenFreeMap / OpenMapTiles
       Basemap style, glyphs and vector tiles served by https://openfreemap.org/
