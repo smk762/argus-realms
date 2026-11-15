@@ -283,8 +283,9 @@ The Dragonhound shared layer is copied from `site/vendor/dh` at build time (one 
 `.dh-shared.json`); `<html data-dh-site="realms">` marks Realms current, and the build fails if the pasted strip drifts.
 The strip's label suffix reads "runs in your browser" instead of the default "recorded output": `data-dh-label="browser"`
 on `<html>` picks it (dh-shared 1.2.4; the pasted strip carries both suffixes and `dh-strip.css` shows one), so the
-strip is pasted unedited and `build.py` checks it exactly. The strip (dh-shared 1.2.4) lists Lightbox, Studio, Atlas,
-Cull and Realms. Reduced motion: camera moves don't animate and CSS transitions are off under `prefers-reduced-motion`.
+strip is pasted unedited and `build.py` checks it exactly. The strip (dh-shared 1.2.5) lists Lightbox, Studio, Atlas,
+Cull, Realms, Safelight, Assay and Sightline; below 600 px its links scroll sideways and `dh-theme.js` brings Realms
+into view. Reduced motion: camera moves don't animate and CSS transitions are off under `prefers-reduced-motion`.
 
 ## Commands
 
