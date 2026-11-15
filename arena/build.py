@@ -1,7 +1,7 @@
 """Build the browser arena into arena/dist: a static site, no server.
 
     uv run --no-sync python arena/build.py                      # placeholder basemap (no painted tiles)
-    uv run --no-sync python arena/build.py --tiles var/tiles    # with the Cook Strait tiles from `make tiles`
+    uv run --no-sync python arena/build.py --tiles              # with each region's painted tiles, where present
     uv run --no-sync python arena/build.py --check              # page checks only (CI): strip, marker, CSP
 
 What goes in:
@@ -10,9 +10,11 @@ What goes in:
   dependencies), downloaded once into arena/.cache and checked against the sha256 in Pyodide's lock file;
 - the game's Python as one zip: atlas_realms from src/, arena_bridge, and the pure-Python parts of argus-atlas and
   structlog from this environment (so the browser runs the versions the tests ran);
-- the world manifest (arena/world/cook-strait.json) and, with --tiles, the painted tiles as plain XYZ folders of WebP
-  q88 files (tiles/<style>/<z>/<x>/<y>.webp; tiles_webp.py, cached in arena/.cache/tiles), with the block's open sea
-  painted in (sea_fill.py). Plain files on purpose: Pages doesn't serve HTTP range requests (no PMTiles);
+- the regions (arena/regions.json): per region a manifest (regions/<id>.json, from arena/world/<id>.json), its mist
+  (fog-<id>.webp) and, with --tiles, the painted tiles from the region's `tiles` export as plain XYZ folders of WebP
+  q88 files (tiles/<id>/<style>/<z>/<x>/<y>.webp; tiles_webp.py, cached in arena/.cache/tiles), with the block's
+  open sea painted in (sea_fill.py). Plain files on purpose: Pages doesn't serve HTTP range requests (no PMTiles).
+  A region without its tiles here gets the placeholder basemap;
 - _headers with the CSP and cache rules for Cloudflare Pages.
 
 Needs the project venv (`make install`) and `npm ci` in arena/.
@@ -104,6 +106,10 @@ def headers() -> str:
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 /arena.json
   Cache-Control: no-cache
+/regions.json
+  Cache-Control: no-cache
+/regions/*
+  Cache-Control: no-cache
 /
   Cache-Control: no-cache
 """
@@ -164,8 +170,14 @@ def _add_tree(z: zipfile.ZipFile, src: Path, arc: str, skip: tuple[str, ...] = (
         z.write(p, f"{arc}/{rel.as_posix()}")
 
 
-def python_zip(dest: Path, manifest: dict) -> str:
-    """Zip what the worker unpacks next to Pyodide; returns its file name (content-hashed)."""
+def load_index() -> list[dict]:
+    return json.loads((HERE / "regions.json").read_text())["regions"]
+
+
+def python_zip(dest: Path, regions: list[dict]) -> str:
+    """Zip what the worker unpacks next to Pyodide; returns its file name (content-hashed). The regions go in as
+    data/regions.json with the committed world manifests (never dist's, whose styles depend on the tiles), so the
+    browser and the CPython reference build the same worlds."""
     tmp = dest / "realms.zip"
     dest.mkdir(parents=True)
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
@@ -174,8 +186,13 @@ def python_zip(dest: Path, manifest: dict) -> str:
         _add_tree(z, _package_dir("structlog"), "structlog", ("__pycache__",))
         z.write(HERE / "py" / "arena_bridge.py", "arena_bridge.py")
         z.write(HERE / "py" / "parity_scenario.py", "parity_scenario.py")
-        z.write(ROOT / "data" / "nz_mainland.geojson", "data/nz_mainland.geojson")
-        z.writestr("data/manifest.json", json.dumps(manifest))
+        index = []
+        for r in regions:
+            outline = Path(r["outline"]).name
+            z.write(ROOT / r["outline"], f"data/{outline}")
+            z.write(ROOT / r["manifest"], f"data/world/{r['id']}.json")
+            index.append({**_public(r), "manifest": f"world/{r['id']}.json", "outline": outline})
+        z.writestr("data/regions.json", json.dumps({"regions": index}))
     digest = hashlib.sha256(tmp.read_bytes()).hexdigest()[:12]
     name = f"realms-{digest}.zip"
     tmp.rename(dest / name)
@@ -185,22 +202,38 @@ def python_zip(dest: Path, manifest: dict) -> str:
 # -- tiles -----------------------------------------------------------------------------------------
 
 
-def world_manifest(tiles: Path | None) -> dict:
-    m = json.loads((HERE / "world" / "cook-strait.json").read_text())
+def _public(r: dict) -> dict:
+    """What the page and the worker are told about a region (no build paths)."""
+    return {k: r[k] for k in ("id", "title", "place", "spawns", "news") if k in r}
+
+
+def region_tiles(r: dict, use_tiles: bool) -> Path | None:
+    """The region's exported tiles, if the build uses tiles and they are here."""
+    tiles = ROOT / r["tiles"]
+    return tiles if use_tiles and (tiles / "manifest.json").exists() else None
+
+
+def world_manifest(r: dict, tiles: Path | None) -> dict:
+    from atlas_realms.tiles import chunks_bounds
+
+    m = json.loads((ROOT / r["manifest"]).read_text())
     m.pop("_comment", None)
+    m["region"] = _public(r)
+    m["bounds"] = chunks_bounds(m["ready_chunks"])  # exact tile edges: older exports rounded them outward
     if tiles is None:
         m["styles"], m["placeholder"] = [], True
     else:
         have = {s["name"] for s in json.loads((tiles / "manifest.json").read_text())["styles"]}
         m["styles"] = [s for s in m["styles"] if s["name"] in have and (tiles / s["name"]).is_dir()]
         m["placeholder"] = not m["styles"]
-    m["tile_url"] = "tiles/{style}/{z}/{x}/{y}.webp"  # plain files: Pages serves no range requests
+    base = f"tiles/{r['id']}"
+    m["tile_url"] = base + "/{style}/{z}/{x}/{y}.webp"  # plain files: Pages serves no range requests
     m["tile_format"] = f"webp q{TILE_QUALITY}"
-    m["labels_url"] = "tiles/labels.geojson" if tiles and (tiles / "labels.geojson").exists() else None
+    m["labels_url"] = f"{base}/labels.geojson" if tiles and (tiles / "labels.geojson").exists() else None
     return m
 
 
-def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
+def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path) -> tuple[int, int]:
     """An XYZ folder of WebP q88 tiles per style (indistinguishable from the PNGs at device scale 2 and ~10x smaller,
     see DESIGN.md), with the block's open-sea chunks painted in (sea_fill.py), built once per set of source tiles and
     cached. Returns the source tile count and the bytes written."""
@@ -212,7 +245,7 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
     from atlas_realms.seed import sea_chunks
 
     baked = {tuple(c) for c in manifest["ready_chunks"]}
-    sea = sea_chunks(baked, ROOT / "data" / "nz_mainland.geojson", manifest["chunk_zoom"])
+    sea = sea_chunks(baked, outline, manifest["chunk_zoom"])
     dest.mkdir(parents=True, exist_ok=True)
     n = size = 0
     for s in manifest["styles"]:
@@ -243,15 +276,16 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
 
 
 def add_fog(out: Path, manifest: dict) -> None:
-    """The mist outside the baked block, and the pan limits it covers (sea_fog.py)."""
+    """The mist outside the region's baked block, and the pan limits it covers (sea_fog.py)."""
     from sea_fog import fog_image
 
+    name = f"fog-{manifest['region']['id']}.webp"
     image, limits, corners = fog_image(manifest["bounds"])
-    (out / "fog.webp").write_bytes(image)
-    manifest["fog"] = {"image": "fog.webp", "coordinates": corners, "limits": limits}
+    (out / name).write_bytes(image)
+    manifest["fog"] = {"image": name, "coordinates": corners, "limits": limits}
 
 
-def add_sea(tiles: Path, dest: Path, manifest: dict) -> None:
+def add_sea(tiles: Path, dest: Path, manifest: dict, prefix: str) -> None:
     """Each style's own sea (colour and texture) for the block's unbaked, all-sea chunks (sea_fog.py)."""
     from sea_fog import sea_sample
 
@@ -261,14 +295,14 @@ def add_sea(tiles: Path, dest: Path, manifest: dict) -> None:
             continue
         s["sea"], texture = got
         (dest / f"sea-{s['name']}.png").write_bytes(texture)
-        s["sea_texture"] = f"tiles/sea-{s['name']}.png"
+        s["sea_texture"] = f"{prefix}/sea-{s['name']}.png"
         print(f"  sea for {s['name']}: {s['sea']} ({len(texture) / 1024:.0f} KiB texture)")
 
 
 # -- main ------------------------------------------------------------------------------------------
 
 
-def build(out: Path, tiles: Path | None) -> None:
+def build(out: Path, use_tiles: bool) -> None:
     html = (SRC / "index.html").read_text()
     check_page(html)
     if out.exists():
@@ -281,10 +315,9 @@ def build(out: Path, tiles: Path | None) -> None:
         shutil.copy2(DH / f, out / "vendor" / "dh" / f)
     for f in ("favicon.ico", "icon.svg", "apple-icon.png"):  # the argus-atlas favicon set, as site/ uses it
         shutil.copy2(ROOT / "site" / f, out / f)
-    manifest = world_manifest(tiles)
-    add_fog(out, manifest)
+    regions = load_index()
     packages = copy_pyodide(out / "pyodide")
-    py = python_zip(out / "py", manifest)
+    py = python_zip(out / "py", regions)
     # Everything the worker downloads before Python starts, with sizes, so the loading bar shows real progress.
     preload = [f"pyodide/{f}" for f in PYODIDE_CORE] + sorted(
         f"pyodide/{w.name}" for w in (out / "pyodide").glob("*.whl")
@@ -300,15 +333,32 @@ def build(out: Path, tiles: Path | None) -> None:
         )
     )
     (out / "_headers").write_text(headers())
-    if tiles is not None and not manifest["placeholder"]:
-        n, size = copy_tiles(tiles, out / "tiles", manifest)
-        add_sea(tiles, out / "tiles", manifest)
-        print(
-            f"  tiles: {n} source tiles -> {size / 2**20:.1f} MiB of WebP tiles ({', '.join(s['name'] for s in manifest['styles'])})"
+    index = []
+    (out / "regions").mkdir()
+    for r in regions:
+        tiles = region_tiles(r, use_tiles)
+        manifest = world_manifest(r, tiles)
+        add_fog(out, manifest)
+        if tiles is not None and not manifest["placeholder"]:
+            prefix = f"tiles/{r['id']}"
+            n, size = copy_tiles(tiles, out / prefix, manifest, ROOT / r["outline"])
+            add_sea(tiles, out / prefix, manifest, prefix)
+            names = ", ".join(s["name"] for s in manifest["styles"])
+            print(f"  {r['id']}: {n} source tiles -> {size / 2**20:.1f} MiB of WebP tiles ({names})")
+        else:
+            print(f"  {r['id']}: no tiles (placeholder basemap)")
+        # After the tiles: they add each style's sea.
+        (out / "regions" / f"{r['id']}.json").write_text(json.dumps(manifest, indent=1))
+        index.append(
+            {
+                **_public(r),
+                "manifest": f"regions/{r['id']}.json",
+                "bounds": manifest["bounds"],
+                "styles": [s["name"] for s in manifest["styles"]],
+                "placeholder": manifest["placeholder"],
+            }
         )
-    else:
-        print("  tiles: none (placeholder basemap)")
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1))  # after the tiles: they add each style's sea
+    (out / "regions.json").write_text(json.dumps({"default": regions[0]["id"], "regions": index}, indent=1))
     files = [p for p in out.rglob("*") if p.is_file()]
     biggest = max(files, key=lambda p: p.stat().st_size)
     total = sum(p.stat().st_size for p in files)
@@ -336,7 +386,7 @@ def check_pages_limits(out: Path, files: list[Path]) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--tiles", type=Path, help="exported tiles (make tiles): <style>/<z>/<x>/<y>.png + manifest.json")
+    p.add_argument("--tiles", action="store_true", help="paint each region from its `tiles` export where present")
     p.add_argument("--out", type=Path, default=HERE / "dist")
     p.add_argument("--check", action="store_true", help="only check the page and render the headers")
     a = p.parse_args()
@@ -345,8 +395,6 @@ def main() -> None:
         assert "wasm-unsafe-eval" in headers()
         print("arena/: strip, marker, no inline scripts or styles, CSP ok")
         return
-    if a.tiles is not None and not (a.tiles / "manifest.json").exists():
-        sys.exit(f"{a.tiles}/manifest.json not found (make tiles exports it)")
     build(a.out, a.tiles)
 
 

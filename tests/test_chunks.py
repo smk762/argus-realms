@@ -67,3 +67,14 @@ def test_res5_hex_can_span_two_chunks():
     # A 17.6 km res-5 hex in a ~30 km chunk: Wellington's straddles the 10/1008 | 10/1009 edge.
     cell = h3.latlng_to_cell(-41.2865, 174.7762, 5)
     assert cell_chunks(cell, Z) == [(10, 1008, 641), (10, 1009, 641)]
+
+
+def test_at_zoom_maps_coarse_and_fine_chunks_onto_the_game_zoom():
+    from atlas_realms.rules.chunks import at_zoom
+
+    assert at_zoom([(10, 5, 6)], 10) == {(10, 5, 6)}
+    assert at_zoom([[9, 2, 3]], 10) == {(10, 4, 6), (10, 5, 6), (10, 4, 7), (10, 5, 7)}
+    assert len(at_zoom([(7, 57, 31)], 10)) == 64
+    kids = [(11, 8, 8), (11, 9, 8), (11, 8, 9)]
+    assert at_zoom(kids, 10) == set()  # one child short
+    assert at_zoom([*kids, (11, 9, 9)], 10) == {(10, 4, 4)}

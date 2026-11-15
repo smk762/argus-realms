@@ -4,7 +4,7 @@ CPython (the reference, from `src/`) and Pyodide (the browser bundle) both run t
 compares their output. Same seed, same orders at the same ticks, so every tick's state must hash the same. It also
 saves mid-game, restores into a fresh Arena and plays on, which must end where the uninterrupted game ends.
 
-    python arena/py/parity_scenario.py --ticks 400 > cpython.json
+    python arena/py/parity_scenario.py --ticks 400 --region iceland > cpython.json
 """
 
 import hashlib
@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 import h3
-from arena_bridge import Arena
+from arena_bridge import Arena, load_regions
 
 SEED = "5ea1" * 16  # 32 bytes
 TICK_EVERY = 0.25  # the fastest setting: period = 0.25 / PACE seconds
@@ -82,9 +82,10 @@ def play(arena: Arena, ticks: int, start: float, hexes: dict, out: list) -> floa
     return now
 
 
-def run(manifest: dict, outline: Path, ticks: int = 400) -> dict:
-    a = Arena(manifest, outline)
-    a.new({"name": "Parity", "unit_class": "tank", "tick_every": TICK_EVERY, "seed": SEED}, T0)
+def run(index: Path, root: Path, region: str, ticks: int = 400) -> dict:
+    regions = load_regions(index, root)
+    a = Arena(regions)
+    a.new({"name": "Parity", "unit_class": "tank", "tick_every": TICK_EVERY, "seed": SEED, "region": region}, T0)
     hexes = {f["properties"]["h3"]: f["properties"]["zone"] for f in a.call("GET", "/api/solo/local/hexes")["features"]}
     trace: list = []
     half = ticks // 2
@@ -95,7 +96,7 @@ def run(manifest: dict, outline: Path, ticks: int = 400) -> dict:
     report = a.call("GET", "/api/solo/local/report?since=0", now=end)
 
     # The same game, saved at the half and restored into a fresh Arena.
-    b = Arena(manifest, outline)
+    b = Arena(regions)
     b.restore(blob, now)
     resumed: list = []
     end_b = play(b, ticks, now, hexes, resumed)
@@ -103,6 +104,7 @@ def run(manifest: dict, outline: Path, ticks: int = 400) -> dict:
 
     return {
         "build": a.build,
+        "region": region,
         "ticks": final["tick"],
         "hexes": len(hexes),
         "trace": trace,
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parents[2]
     p = argparse.ArgumentParser()
     p.add_argument("--ticks", type=int, default=400)
-    p.add_argument("--manifest", type=Path, default=root / "arena" / "world" / "cook-strait.json")
-    p.add_argument("--outline", type=Path, default=root / "data" / "nz_mainland.geojson")
+    p.add_argument("--region", default="cook-strait")
+    p.add_argument("--index", type=Path, default=root / "arena" / "regions.json")
     a = p.parse_args()
-    print(json.dumps(run(json.loads(a.manifest.read_text()), a.outline, a.ticks), sort_keys=True))
+    print(json.dumps(run(a.index, root, a.region, a.ticks), sort_keys=True))

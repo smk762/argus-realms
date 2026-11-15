@@ -16,10 +16,12 @@ mosaic feature: a candidate for argus-atlas once more than this game needs it.)
 import argparse
 import io
 import json
+import math
 import sys
 import time
 from pathlib import Path
 
+from argus_atlas.chunks import chunk_bbox
 from PIL import Image
 from pmtiles.reader import MmapSource, Reader, all_tiles
 
@@ -109,6 +111,16 @@ def build_overviews(style_out: Path, from_zoom: int, overview_min: int) -> int:
     return written
 
 
+def chunks_bounds(chunks) -> list[float]:
+    """[west, south, east, north] of the chunks' own tile edges, rounded inward to 1e-7 degrees. The PMTiles headers
+    store bounds in 1e-7 steps rounded outward, and a raster source given an east edge of -11.2499999 asks for a whole
+    tile column past the painting (404s at Iceland's edge)."""
+    boxes = [chunk_bbox(*c) for c in chunks]
+    w, s = min(b.west for b in boxes), min(b.south for b in boxes)
+    e, n = max(b.east for b in boxes), max(b.north for b in boxes)
+    return [math.ceil(w * 1e7) / 1e7, math.ceil(s * 1e7) / 1e7, math.floor(e * 1e7) / 1e7, math.floor(n * 1e7) / 1e7]
+
+
 def export(maps: Path, out: Path, patron_only: set[str] = frozenset(), overview_min: int = 5) -> dict:
     """Export every style under `maps` and write the manifest. A chunk is ready when every style has it."""
     styles, per_style, info = [], {}, []
@@ -130,12 +142,7 @@ def export(maps: Path, out: Path, patron_only: set[str] = frozenset(), overview_
         "minzoom": min((m["minzoom"] for m in info), default=0),
         "chunk_zoom": min((m.get("chunk_zoom", m["minzoom"]) for m in info), default=0),
         "maxzoom": max((m["maxzoom"] for m in info), default=0),
-        "bounds": [
-            min((m["bounds"][0] for m in info), default=0),
-            min((m["bounds"][1] for m in info), default=0),
-            max((m["bounds"][2] for m in info), default=0),
-            max((m["bounds"][3] for m in info), default=0),
-        ],
+        "bounds": chunks_bounds(set().union(*per_style.values())) if per_style else [0, 0, 0, 0],
         "tile_url": "tiles/{style}/{z}/{x}/{y}.png",
         "labels_url": "tiles/labels.geojson" if labels else None,
         "attribution": "Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap contributors",

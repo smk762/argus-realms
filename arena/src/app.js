@@ -13,7 +13,7 @@ const store = {
 const $ = (id) => document.getElementById(id);
 const BASE = new URL(".", location.href).href; // tiles are relative to the page, wherever it is served
 
-let manifest, meta, map, sid, hexes, lastState, fogCount = -1, seenResults = new Set();
+let regions, manifest, meta, map, sid, hexes, lastState, fogCount = -1, seenResults = new Set();
 // The city being renamed (its row is left alone while you type) and names sent but not yet ticked in.
 let renaming = null;
 let popup = null, popupUser = null; // the open player card on the map
@@ -52,7 +52,7 @@ const STEPS = { // [where the bar is when the step starts, where it ends, status
   download: [0, 75, "Downloading the game"],
   python: [75, 86, "Starting Python (WebAssembly)…"],
   packages: [86, 92, "Loading h3 and pydantic…"],
-  rules: [92, 99, "Loading the rules and the map of Cook Strait…"],
+  rules: [92, 99, "Loading the rules and the maps…"],
   ready: [100, 100, "Ready"],
 };
 const QUOTE_MS = 5500;
@@ -198,8 +198,9 @@ function initMap() {
     // Panning stops at the edge of the mist, and MapLibre won't zoom out past the point where the limits fill the
     // view, so no part of the world beyond them ever shows.
     maxBounds: [[lw, ls], [le, ln]],
-    minZoom: 7,
-    maxZoom: manifest.maxzoom, // the painted map's native detail
+    // Down to three zooms out from a chunk (Cook Strait: 7), never below the painting's coarsest tiles.
+    minZoom: Math.max(manifest.minzoom, manifest.chunk_zoom - 3),
+    maxZoom: maxZoom(),
     attributionControl: false, // credits are in the footer (renderAttribution)
   });
   map.on("styleimagemissing", (e) => {
@@ -210,7 +211,17 @@ function initMap() {
   return new Promise((resolve) => map.on("load", resolve));
 }
 
-const FOG = "#0d0f13"; // the game's fog colour; the mist image (fog.webp) is built around it
+const FOG = "#0d0f13"; // the game's fog colour; the mist image (fog-<region>.webp) is built around it
+
+// The painted map's native detail, but at least z10 so hexes and units stay readable where the bake is coarse
+// (Iceland is painted to z9; MapLibre stretches its tiles one zoom further).
+function maxZoom() { return Math.max(manifest.maxzoom, 10); }
+
+// The chosen theme, if this region has it; else the region's first.
+function chosenStyle() {
+  const want = store.get("style");
+  return manifest.styles.some((s) => s.name === want) ? want : manifest.styles[0]?.name;
+}
 
 // The block's unbaked chunks are all sea (the bake plan skipped them for having no land), so the background is the
 // style's own painted sea: its colour, with a texture cut from its calmest sea tile.
@@ -219,7 +230,7 @@ async function seaTextures() {
     const img = await map.loadImage(`${BASE}${s.sea_texture}`);
     map.addImage(`sea-${s.name}`, img.data, { pixelRatio: 2 });
   }));
-  setSea(store.get("style") || manifest.styles[0]?.name);
+  setSea(chosenStyle());
 }
 
 function setSea(name) {
@@ -230,7 +241,7 @@ function setSea(name) {
 }
 
 function addLayers() {
-  const chosen = store.get("style") || manifest.styles[0]?.name; // none in a placeholder build
+  const chosen = chosenStyle(); // none in a placeholder build
   for (const s of manifest.styles) {
     map.addSource(`paint-${s.name}`, {
       type: "raster",
@@ -287,7 +298,7 @@ function addLayers() {
   // Other units cluster when zoomed out so stacks don't spam icons; yours is its own source and never clusters.
   map.addSource("units", {
     type: "geojson", data: { type: "FeatureCollection", features: [] },
-    cluster: true, clusterRadius: 36, clusterMaxZoom: 10,
+    cluster: true, clusterRadius: 36, clusterMaxZoom: Math.min(10, maxZoom() - 1),
   });
   map.addSource("you", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   // Hexes under the fog are drawn by the fog layer; only playable ones get fills and borders.
@@ -357,7 +368,7 @@ function addLayers() {
   map.on("click", "unit-clusters", async (e) => {
     const f = e.features[0];
     const zoom = await map.getSource("units").getClusterExpansionZoom(f.properties.cluster_id);
-    map.easeTo({ center: f.geometry.coordinates, zoom: Math.min(zoom + 0.5, manifest.maxzoom), animate: !REDUCED.matches });
+    map.easeTo({ center: f.geometry.coordinates, zoom: Math.min(zoom + 0.5, maxZoom()), animate: !REDUCED.matches });
   });
   map.on("mouseenter", "unit-clusters", () => { map.getCanvas().style.cursor = "zoom-in"; });
   map.on("mouseleave", "unit-clusters", () => { map.getCanvas().style.cursor = ""; });
@@ -415,6 +426,13 @@ function wireLongPress() {
   canvas.addEventListener("touchcancel", cancel, { passive: true });
 }
 
+function fillStyles() {
+  const style = $("style");
+  style.replaceChildren(...manifest.styles.map((s) => new Option(s.name, s.name)));
+  style.value = chosenStyle();
+  style.closest("label").hidden = !manifest.styles.length;
+}
+
 function setStyle(name) {
   for (const s of manifest.styles) {
     map.setLayoutProperty(`paint-${s.name}`, "visibility", s.name === name ? "visible" : "none");
@@ -430,7 +448,7 @@ function centreOf(h3) {
 
 function panTo(h3) {
   const at = centreOf(h3);
-  if (at) map.flyTo({ center: at, zoom: Math.min(Math.max(map.getZoom(), 10), manifest.maxzoom), speed: 1.6, animate: !REDUCED.matches });
+  if (at) map.flyTo({ center: at, zoom: Math.min(Math.max(map.getZoom(), 10), maxZoom()), speed: 1.6, animate: !REDUCED.matches });
 }
 
 function draw(st) {
@@ -1147,6 +1165,11 @@ function describe(spec) {
 }
 
 function startDialog() {
+  const where = $("start-region");
+  where.replaceChildren(...regions.regions.map((r) => new Option(`${r.title}${r.place !== r.title ? `, ${r.place}` : ""}`, r.id)));
+  where.value = manifest.region.id;
+  // The map behind the dialog follows the choice, so you see where you'll play.
+  where.onchange = () => showRegion(where.value).catch((e) => toast(e.message));
   const sel = $("start-class");
   sel.replaceChildren(...Object.keys(meta.classes).map((c) => new Option(c, c)));
   const blurb = () => { $("class-blurb").textContent = describe(meta.classes[sel.value]); };
@@ -1163,7 +1186,10 @@ function startDialog() {
   $("start-form").onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    const body = { name: f.get("name"), unit_class: f.get("unit_class"), bots: f.getAll("bots"), subscriber: f.get("subscriber") === "on" };
+    const body = {
+      name: f.get("name"), unit_class: f.get("unit_class"), bots: f.getAll("bots"),
+      subscriber: f.get("subscriber") === "on", region: f.get("region"),
+    };
     // ?seed=<64 hex> replays a game: the same seed and the same orders at the same ticks give the same game.
     const seed = new URLSearchParams(location.search).get("seed");
     if (seed && /^[0-9a-f]{64}$/i.test(seed)) body.seed = seed;
@@ -1171,6 +1197,7 @@ function startDialog() {
     try { r = await api("/api/solo", body); } catch (err) { toast(err.message); return; }
     store.set("solo", r.id);
     store.set("seed", r.seed);
+    store.set("region", r.region);
     $("start").close();
     await begin(r.id);
   };
@@ -1221,11 +1248,8 @@ function wirePanel() {
   $("stop").onclick = () => order("cancel");
   $("swap").replaceChildren(...Object.keys(meta.classes).map((c) => new Option(c, c)));
   $("swap-go").onclick = () => order("class", { class: $("swap").value });
-  const style = $("style");
-  style.replaceChildren(...manifest.styles.map((s) => new Option(s.name, s.name)));
-  style.value = store.get("style") || manifest.styles[0]?.name;
-  style.closest("label").hidden = !manifest.styles.length;
-  style.onchange = () => setStyle(style.value);
+  fillStyles();
+  $("style").onchange = () => setStyle($("style").value);
   $("speed").onchange = () => api(`/api/solo/${sid}/control`, { tick_every: Number($("speed").value) });
   $("pause").onclick = () => { autoPaused = false; setPaused(!(lastState && lastState.paused)); };
   $("quit").onclick = () => { store.del("solo"); store.del(SAVE_KEY); location.reload(); };
@@ -1406,14 +1430,29 @@ function wireShieldOptions() {
   $("shield-clear").onclick = () => { order("shield_schedule", { from: null, to: null }); $("shield-dialog").close(); };
 }
 
-async function main() {
-  // The map comes up while the rules engine loads (a few MB of WebAssembly, cached after the first visit).
-  quotes();
-  manifest = await (await fetch("manifest.json")).json();
+// Load a region's manifest and (re)build the map for it: its painted tiles in every theme, its mist and pan limits.
+async function showRegion(id) {
+  const entry = regions.regions.find((r) => r.id === id);
+  if (!entry) throw new Error(`unknown map ${id}`);
+  if (manifest && manifest.region.id === id && map) return;
+  manifest = await (await fetch(entry.manifest)).json();
   $("placeholder").hidden = !manifest.placeholder;
+  $("region-title").textContent = `· ${manifest.region.title}`;
+  if (map) { closeMenu(); if (popup) popup.remove(); map.remove(); }
   await initMap();
   addLayers();
   seaTextures().catch(() => {}); // the flat sea colour stays if a texture can't load
+  fillStyles();
+  renderAttribution();
+}
+
+async function main() {
+  // The map comes up while the rules engine loads (a few MB of WebAssembly, cached after the first visit).
+  quotes();
+  regions = await (await fetch("regions.json")).json();
+  // The saved game's map (or the last one picked), else the default.
+  const known = (id) => regions.regions.some((r) => r.id === id);
+  await showRegion(known(store.get("region")) ? store.get("region") : regions.default);
   await ready;
   meta = await api("/api/meta");
   hideLoader();
@@ -1421,7 +1460,8 @@ async function main() {
   const blob = store.get(SAVE_KEY);
   if (blob) {
     try {
-      await restore(blob);
+      const r = await restore(blob);
+      if (r.region !== manifest.region.id) await showRegion(r.region);
       await begin("local");
       return;
     } catch (e) {

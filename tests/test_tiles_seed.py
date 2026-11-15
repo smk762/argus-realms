@@ -156,3 +156,15 @@ def test_the_strait_is_open_water_in_the_solo_world():
     mid_strait = h3.latlng_to_cell(-41.6, 174.6, 5)  # chunk 10/1008/642: never baked, all sea
     assert w.hexes[mid_strait].playable and w.hexes[mid_strait].zone == "water"
     assert all(h.zone == "water" for c, h in w.hexes.items() if all(ch in sea for ch in cell_chunks(c, 10)))
+
+
+def test_chunks_bounds_are_the_tile_edges_never_past_them():
+    from atlas_realms.tiles import chunks_bounds
+
+    # Iceland's block: the PMTiles headers gave -11.2499999 for the east edge, a whole z7 column too far.
+    w, s, e, n = chunks_bounds([(7, 55, 32), (7, 59, 34), (7, 57, 31)])
+    assert (w, e) == (-25.3125, -11.25)
+    assert 62.9152330 < s < 62.9152332 and 67.6092205 < n < 67.6092207
+    z = 7
+    tile_x = lambda lon: (lon + 180) / 360 * 2**z  # noqa: E731
+    assert tile_x(e) <= 60 and tile_x(w) >= 55

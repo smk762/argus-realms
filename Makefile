@@ -65,12 +65,13 @@ sea-masks: static  ## Remake data/masks (where painted sea may show) from the Op
 preview: tiles  ## Solo arena in the browser at http://127.0.0.1:8110
 	$(UV) run --no-sync python -m atlas_realms.api --tiles var/tiles --port 8110
 
-# The browser arena (arena/): the solo game in Pyodide, a static site. TILES defaults to var/tiles when it exists
-# (make tiles); without it the build uses a placeholder basemap. Needs `npm ci` in arena/ once.
-TILES ?= $(wildcard var/tiles)
+# The browser arena (arena/): the solo game in Pyodide, a static site, one map per region in arena/regions.json.
+# TILES=1 (the default when var/tiles or var/tiles-areas exists) paints each region from its `tiles` export; a region
+# without one gets a placeholder basemap. Needs `npm ci` in arena/ once.
+TILES ?= $(if $(wildcard var/tiles var/tiles-areas),1,)
 
-arena:  ## Build the browser arena into arena/dist (painted tiles from $$TILES if set)
-	$(UV) run --no-sync python arena/build.py $(if $(TILES),--tiles $(TILES),)
+arena:  ## Build the browser arena into arena/dist (each region's painted tiles unless TILES=)
+	$(UV) run --no-sync python arena/build.py $(if $(TILES),--tiles,)
 
 arena-check:  ## Check arena/index.html without building: pasted strip, marker, no inline scripts or styles, CSP
 	$(UV) run --no-sync python arena/build.py --check

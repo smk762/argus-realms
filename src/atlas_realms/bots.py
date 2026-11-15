@@ -62,7 +62,7 @@ PERSONALITIES: dict[str, Personality] = {
             "raider", "tank", "Hunts the nearest enemy, double-marching in", 0.8, 30, 8, marches=True, risk=0.45
         ),
         Personality("warden", "medic", "Stays close to home, heals, holds what it has", 0.2, 70, 2, risk=0.7),
-        Personality("corsair", "marine", "Crosses the strait to raid the coast", 0.6, 40, 10, prey="coastal", risk=0.5),
+        Personality("corsair", "marine", "Crosses the water to raid the coast", 0.6, 40, 10, prey="coastal", risk=0.5),
         Personality("sapper", "saboteur", "Goes after dug-in defenders", 0.6, 40, 6, prey="dug_in", risk=0.5),
         Personality("jackal", "barbarian", "Picks off wounded units", 0.7, 50, 6, prey="weakest", risk=0.6),
         Personality(

@@ -95,11 +95,15 @@ Solo arena (the first playable mode; PvP on the shared Postgres world comes late
 unchanged Python in a Web Worker: `arena/py/arena_bridge.py` answers the client's `/api/...` requests in-process (the
 wall clock passed in), `arena/src/app.js` is `web/app.js` talking to the worker and saving to localStorage.
 `arena/build.py` zips `src/atlas_realms` + argus-atlas + structlog, copies Pyodide (pinned in `arena/package.json`) and
-sha256-checked wheels, the world manifest (`arena/world/cook-strait.json`), optional tiles (packed by
+sha256-checked wheels, the regions (`arena/regions.json`: per map a world manifest in `arena/world/`, an outline in
+`data/`, spawns and the tile export to paint from; the client picks one at new game, the save records it), optional
+tiles (per region, packed by
 `arena/sea_fill.py` with the open sea painted in, then `arena/tiles_webp.py` into XYZ folders of WebP q88 files:
 never PMTiles, since Pages serves no range requests; `test/no-range.test.mjs` guards it), and writes `_headers` (CSP
 with `'wasm-unsafe-eval'`). `make arena-test` = build + `arena/test/parity.test.mjs` (Pyodide vs CPython, same state
-every tick, and save/restore). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
+every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z7) is mapped onto the
+game's z10 by `rules.chunks.at_zoom`. The tick copies the world with `World.snapshot()`, not deepcopy (95% of a tick
+on Iceland); a new mutable field on Hex/Unit/User/Contract must be copied there (`tests/test_world_snapshot.py`). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
 Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the
 label suffix, which `build.py` allows). Loading quotes live in `arena/src/quotes.json`: genuine, sourced words only.
 
