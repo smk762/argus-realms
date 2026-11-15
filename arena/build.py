@@ -207,21 +207,35 @@ def world_manifest(tiles: Path | None) -> dict:
 
 def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
     """One PMTiles per style (WebP q88: indistinguishable from the PNGs at device scale 2 and ~10x smaller, see
-    DESIGN.md), packed once per set of source tiles and cached."""
+    DESIGN.md), with the block's open-sea chunks painted in (sea_fill.py), built once per set of source tiles and
+    cached."""
+    from sea_fill import VERSION as FILL_VERSION
+    from sea_fill import fill
+    from sea_fog import sea_sample
     from tiles_pack import PAGES_MAX, pack
 
+    from atlas_realms.seed import sea_chunks
+
+    baked = {tuple(c) for c in manifest["ready_chunks"]}
+    sea = sea_chunks(baked, ROOT / "data" / "nz_mainland.geojson", manifest["chunk_zoom"])
     dest.mkdir(parents=True, exist_ok=True)
     n = size = 0
     for s in manifest["styles"]:
         src = sorted((tiles / s["name"]).rglob("*.png"))
         key = hashlib.sha256(
-            f"webp{TILE_QUALITY}".encode()
+            f"webp{TILE_QUALITY}:fill{FILL_VERSION}:{sorted(sea)}".encode()
             + b"".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime_ns}".encode() for p in src)
         ).hexdigest()[:16]
         cached = HERE / ".cache" / "tiles" / f"{s['name']}-{key}.pmtiles"
         if not cached.exists():
-            print(f"  packing {s['name']} ({len(src)} tiles, WebP q{TILE_QUALITY})")
-            pack(tiles, s["name"], cached, "webp", TILE_QUALITY, manifest["bounds"])
+            root = tiles
+            got = sea_sample(tiles, s["name"], manifest)
+            if got and sea:
+                root = HERE / ".cache" / "filled"
+                r = fill(tiles, s["name"], manifest, sea, got[0], root)
+                print(f"  painted {r['sea_chunks']} open-sea chunks into {s['name']} ({r['tiles_written']} tiles)")
+            print(f"  packing {s['name']} ({len(src)} source tiles, WebP q{TILE_QUALITY})")
+            pack(root, s["name"], cached, "webp", TILE_QUALITY, manifest["bounds"])
         if cached.stat().st_size > PAGES_MAX:
             sys.exit(f"{cached.name} is over the Pages 25 MiB limit")
         shutil.copy2(cached, dest / f"{s['name']}.pmtiles")

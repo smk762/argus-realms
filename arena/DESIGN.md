@@ -165,15 +165,31 @@ builds now draw no basemap at all.
   - MapLibre draws it as an image layer above the painting.
   - `maxBounds` is the mist's extent. MapLibre won't zoom out past the point where those limits fill the view, so the
     start view (about z8 on a desktop) is also the furthest out you can go. No part of the world beyond the mist shows.
-- **Inside the block, where nothing was baked: painted sea.** These chunks are all sea by the bake plan's own land test,
-  so this is the cheap ocean mask, and no OSM coastline is needed.
-  - The map's background is each style's own sea: the median colour of the painted pixels along chunk edges that face
-    a skipped chunk (antique `#4e7985`, tolkien `#567a81`).
-  - On top of that colour goes a texture made from the calmest sea tile at z12, mirrored 2 × 2 so it repeats without
-    seams and shifted to that median colour.
-  - The texture switches with the map style.
-  - Limitations: the texture is a fixed screen-pixel pattern, so its grain doesn't scale with zoom the way the painting
-    does; and a faint edge can show where a painted chunk meets the texture.
+- **Inside the block, where nothing was baked: baked sea tiles.**
+  - **The problem:** a flat texture behind the gaps showed as rectangles. Each painted chunk's sea is a slightly
+    different blue, so the fill matched none of them; neighbouring painted chunks also met in visible straight lines
+    out at sea.
+  - **The fix:** `sea_fill.py` paints the open-sea chunks (`seed.sea_chunks`, the same rule that makes them playable)
+    into the PMTiles at build time, on the CPU, as ordinary tiles. They render exactly like painted ones at every zoom.
+  - **How:** it works on one z12 canvas of the block, in five steps.
+    1. Level the seams between painted chunks out at sea. Each side shifts by half the colour step, easing out over
+       256 px. Sea pixels only, low frequencies only, so the grain stays as painted and the coasts keep their colour.
+    2. Fill the gaps by push-pull interpolation from the painted sea next to them.
+    3. Add seeded grain that matches the painted sea's own noise and dark speckles, measured from it. It never repeats
+       visibly, and builds stay reproducible.
+    4. Mirror each painted neighbour's sea across the shared edge, easing into the fill over 320 px, so colour and
+       grain are continuous at the edge itself.
+    5. Write the block's tiles at every zoom from the canvas.
+  - **Cost:** about 40 s per style at build time (cached), and +1.2 MiB of PMTiles. 14.4 MiB in all, still well
+    under 25 MiB per file.
+  - **Checked:**
+    - Before/after crops at z9.6, z11 and z12 across five boundaries (painted to gap, gap to gap), both styles:
+      `arena-seams-<style>-<boundary>.png` in the review folder.
+    - At z11 and z12 the boundaries are no longer visible.
+    - At z9.6 the strait now shades gradually between the painted chunks' differing blues, where before it stepped.
+      Tolkien's speckle density still varies a little from one painted chunk to the next; that is in the painting
+      itself.
+  - **Fallback:** the style's sea colour and texture are still the map background, where no tile covers.
 - **In play: the strait is open water.** `seed.sea_chunks()` is in the Python rules, so the server and the browser agree.
   - Inside the bounding box of the baked chunks, a chunk with no land counts as ready. "No land" is the bake plan's own
     test: no res-7 land cell touches the chunk. Open sea needs no painting.
@@ -190,6 +206,16 @@ builds now draw no basemap at all.
   painting in the parchment style, inside the block only and under the fog.
 - **Placeholder build (no tiles):** keeps the OpenFreeMap basemap and says so, with the same mist and pan limits
   outside the block.
+
+## Touch
+
+Touch wording and long-press follow the input device, not the screen width: `(pointer: coarse), (hover: none)`.
+- **Hint:** on touch it reads "Tap a hex to move there. Tap one with units or a city, or long-press, for more."
+- **Long-press:** one finger held 500 ms without moving opens the same hex menu a right-click does. iOS Safari fires
+  no `contextmenu` and MapLibre has no long-press, so `wireLongPress` implements it, and the tap that ends a long-press
+  doesn't also move you.
+- **Test:** `test/mobile.mjs` checks the wording on phones and desktop, and long-presses a hex through CDP touch
+  events.
 
 ## Phones
 

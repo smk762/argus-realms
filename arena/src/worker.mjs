@@ -31,24 +31,36 @@ async function prefetch(files) {
       postMessage({ progress: { step: "download", loaded, total } });
     }
   };
-  await Promise.all(files.map(async (f) => {
-    const r = await fetch(f.url);
-    if (!r.ok) throw new Error(`${f.url}: ${r.status}`);
-    const reader = r.body.getReader(), parts = [];
-    let got = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      parts.push(value);
-      got += value.length;
-      step(value.length);
+  // A dropped connection (a phone switching networks, ERR_NETWORK_CHANGED) retries the file a few times, with the bar
+  // stepping back by what that attempt had counted.
+  const get = async (f) => {
+    for (let attempt = 1; ; attempt++) {
+      let got = 0;
+      try {
+        const r = await fetch(f.url);
+        if (!r.ok) throw new Error(`${f.url}: ${r.status}`);
+        const reader = r.body.getReader(), parts = [];
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parts.push(value);
+          got += value.length;
+          step(value.length);
+        }
+        step(Math.max(0, f.bytes - got)); // a size that differs from the listing (it shouldn't) still completes the bar
+        return new Blob(parts).arrayBuffer();
+      } catch (e) {
+        step(-got);
+        if (attempt >= RETRIES) throw e;
+        await new Promise((ok) => setTimeout(ok, 500 * attempt));
+      }
     }
-    step(Math.max(0, f.bytes - got)); // a size that differs from the listing (it shouldn't) still completes the bar
-    bufs.set(new URL(f.url, location.href).pathname, await new Blob(parts).arrayBuffer());
-  }));
+  };
+  await Promise.all(files.map(async (f) => { bufs.set(new URL(f.url, location.href).pathname, await get(f)); }));
   return bufs;
 }
 
+const RETRIES = 4;
 const TYPES = { wasm: "application/wasm", mjs: "text/javascript", json: "application/json" };
 
 function serveFromMemory(bufs) {

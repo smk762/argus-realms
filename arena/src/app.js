@@ -25,6 +25,8 @@ const sentNames = new Map();
 
 const SAVE_KEY = "arena-save", SAVE_MS = 3000;
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)");
+// Touch wording and long-press follow the input device, not the screen width: a coarse pointer without hover.
+const TOUCH = matchMedia("(pointer: coarse), (hover: none)");
 const worker = new Worker("worker.mjs", { type: "module" });
 const waiting = new Map();
 let nextId = 1, lastSave = 0;
@@ -363,6 +365,7 @@ function addLayers() {
   map.on("mouseenter", "unit-clusters", () => { map.getCanvas().style.cursor = "zoom-in"; });
   map.on("mouseleave", "unit-clusters", () => { map.getCanvas().style.cursor = ""; });
   map.on("click", "hex-fill", (e) => {
+    if (Date.now() - longPressAt < 800) return; // the tap that ended a long-press already opened the menu
     // A click on a cluster badge zooms in, and one on a sprite opens its card (above), instead of moving there.
     if (map.queryRenderedFeatures(e.point, { layers: ["unit-clusters", "units", "you"] }).length) return;
     const f = e.features[0];
@@ -372,11 +375,47 @@ function addLayers() {
   });
   map.on("contextmenu", "hex-fill", (e) => {
     e.preventDefault();
+    if (Date.now() - longPressAt < 800) return; // a browser that also fires contextmenu on a long-press
     if (e.features[0]) hexMenu(e.features[0].properties.h3, e.point, true);
   });
+  wireLongPress();
   map.on("movestart", closeMenu);
   map.on("mouseenter", "hex-fill", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "hex-fill", () => { map.getCanvas().style.cursor = ""; });
+}
+
+// Touch: a long-press does what a right-click does (iOS Safari fires no contextmenu, and MapLibre has no long-press).
+// One finger, held LONG_PRESS_MS without moving more than a few pixels.
+const LONG_PRESS_MS = 500;
+let longPressAt = 0;
+
+function wireLongPress() {
+  const canvas = map.getCanvasContainer();
+  let timer = null, start = null, fired = false;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  canvas.addEventListener("touchstart", (e) => {
+    cancel();
+    fired = false;
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0], box = canvas.getBoundingClientRect();
+    start = { x: t.clientX, y: t.clientY, point: new maplibregl.Point(t.clientX - box.left, t.clientY - box.top) };
+    timer = setTimeout(() => {
+      timer = null;
+      const f = map.queryRenderedFeatures(start.point, { layers: ["hex-fill"] })[0];
+      if (!f) return;
+      longPressAt = Date.now();
+      fired = true;
+      hexMenu(f.properties.h3, start.point, true);
+      if (navigator.vibrate) try { navigator.vibrate(15); } catch { /* not allowed */ }
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+  canvas.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (timer && (e.touches.length !== 1 || Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10)) cancel();
+  }, { passive: true });
+  // The finger lifting after a long-press would otherwise become a click on the menu that just opened under it.
+  canvas.addEventListener("touchend", (e) => { cancel(); if (fired) { e.preventDefault(); fired = false; } }, { passive: false });
+  canvas.addEventListener("touchcancel", cancel, { passive: true });
 }
 
 function setStyle(name) {
@@ -1148,7 +1187,9 @@ async function begin(id) {
   $("panel").hidden = false;
   await save(true);
   renderAttribution();
-  toast("Click a hex to move there. Click one with units or a city, or right-click, for more.");
+  toast(TOUCH.matches
+    ? "Tap a hex to move there. Tap one with units or a city, or long-press, for more."
+    : "Click a hex to move there. Click one with units or a city, or right-click, for more.");
   poll();
 }
 
@@ -1193,6 +1234,7 @@ function wirePanel() {
   $("quit").onclick = () => { store.del("solo"); store.del(SAVE_KEY); location.reload(); };
   wireAway();
   wirePhone();
+  if (TOUCH.matches) $("orders").title = "Tap a hex to move there; tap one with units or a city, or long-press, for more.";
   addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
   addEventListener("pointerdown", (e) => { if (!$("ctx").contains(e.target)) closeMenu(); }, true);
   wireShieldOptions();

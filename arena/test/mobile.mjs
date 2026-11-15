@@ -31,6 +31,9 @@ for (const [name, opts] of [
   await page.waitForFunction(() => typeof lastState !== "undefined" && lastState);
   await page.waitForTimeout(1500);
   const phone = name !== "desktop";
+  const hint = await page.textContent("#toast");
+  check(phone ? hint.startsWith("Tap a hex") && hint.includes("long-press") : hint.startsWith("Click a hex") && hint.includes("right-click"),
+    `${name}: ${phone ? "touch" : "mouse"} wording in the hint ("${hint.slice(0, 40)}…")`);
 
   const layout = () => page.evaluate(() => {
     const vis = (el) => el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
@@ -83,6 +86,29 @@ for (const [name, opts] of [
       return u.hex === to || !!(u.path && u.path.length) || !!document.querySelector("#ctx:not([hidden])");
     }, target.h3);
     check(moving, `${name}: tap on a hex moves (or offers a menu)`);
+    await page.evaluate(() => closeMenu());
+
+    // Long-press a hex other than the one you're on (that one has nothing to offer): the menu a right-click opens.
+    const other = await page.evaluate(() => {
+      const me = myUnit(), box = document.getElementById("map").getBoundingClientRect();
+      const ok = lastState.hexes.filter((h) => h.zone === "land" && h.playable && h.h3 !== me.hex)
+        .map((h) => ({ h3: h.h3, p: map.project(centreOf(h.h3)) }))
+        .filter(({ p }) => p.x > 30 && p.x < innerWidth - 30 && p.y > 150 && p.y < innerHeight - 170);
+      const t = ok[Math.floor(ok.length / 2)];
+      return t && { x: box.left + t.p.x, y: box.top + t.p.y };
+    });
+    const cdp = await ctx.newCDPSession(page);
+    const pt = [{ x: other.x, y: other.y }];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pt });
+    await page.waitForTimeout(800);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(300);
+    const menu = await page.evaluate(() => {
+      const el = document.querySelector("#ctx");
+      return el.hidden ? null : [...el.querySelectorAll("button")].map((b) => b.textContent.trim()).filter(Boolean);
+    });
+    check(!!(menu && menu.length), `${name}: long-press opens the hex menu (${menu ? menu.slice(0, 3).join(", ") : "nothing"})`);
+    await shot("longpress");
     await page.evaluate(() => closeMenu());
   }
 
