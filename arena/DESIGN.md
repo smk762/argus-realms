@@ -108,9 +108,9 @@ The painted Cook Strait tiles are baked on the GPU host by `bakes/cook-strait.sh
 | one PMTiles, PNG, z5–11 | 16.4 MiB | 18.2 MiB | fits, but loses the native z12 detail |
 | Source chunks (`var/maps`, 60 `fantasy.pmtiles`) | | | 122.7 MiB |
 
-Cloudflare Pages allows 25 MiB per file and 20,000 files, so a lossless PMTiles per style (60–66 MiB) doesn't fit. Every lossy
-encoding below fits with room to spare. Each one was packed into one PMTiles file per style (`tiles_pack.py`, z5–12,
-658 tiles, method 6 for WebP, speed 6 for AVIF). PSNR is measured against the PNGs over the 480 z12 tiles:
+The encoding was chosen by packing each candidate into one PMTiles file per style (z5–12, 658 tiles, method 6 for
+WebP, speed 6 for AVIF), which also gives the per-style totals. PSNR is measured against the PNGs over the 480 z12
+tiles. (The arena now serves the same tiles as plain files instead; see "How it is served".)
 
 | Encoding | antique | tolkien | both | z12 PSNR (antique / tolkien) |
 |---|---|---|---|---|
@@ -129,24 +129,41 @@ harbour coast, and Tararua Range relief). Tolkien's pen hatching is the hardest 
 fine strokes soften visibly at z12. At q85 the difference only shows when you flip between images. At q88 I couldn't
 tell it from the PNG.
 
-**Pick: WebP q88**, one PMTiles per style (5.7 and 7.2 MiB). It looks the same as the PNGs at the zoom where detail
+**Pick: WebP q88** (5.7 and 7.2 MiB per style before the sea fill). It looks the same as the PNGs at the zoom where detail
 matters, and it is 10× smaller.
 - q92 costs 27% more bytes for a difference nobody will see.
 - AVIF is about 10–15% smaller at the same PSNR, but it softens the hatching more at equal size, encodes about 10× slower,
-  and decodes slower on low-end phones. MapLibre and pmtiles do handle it, so AVIF is a possible later switch.
+  and decodes slower on low-end phones. MapLibre does handle it, so AVIF is a possible later switch.
 - Lossless WebP for the low zooms only would add about 1 MiB for zooms where q88 is already indistinguishable.
 - The painted tiles have no text in them (this export has no `labels.geojson`). Place names come from the basemap,
   under the fog, so label legibility doesn't depend on the tile encoding.
 
-How it is served:
-- `build.py --tiles var/tiles` packs `dist/tiles/<style>.pmtiles`. The pack is cached in `arena/.cache/tiles`, keyed on
-  the source tiles, and the build fails above 25 MiB.
-- The client registers the `pmtiles://` protocol, from `vendor/pmtiles.js` (pmtiles 4.5.0, pinned, served from `'self'`).
-- Pages answers range requests on static files. `scripts/serve.mjs` does the same locally.
+How it is served: **plain XYZ folders, one WebP file per tile** (`tiles/<style>/<z>/<x>/<y>.webp`).
+- `build.py --tiles var/tiles` paints in the open sea (`sea_fill.py`) and re-encodes every tile (`tiles_webp.py`). The
+  result is cached in `arena/.cache/tiles`, keyed on the source tiles and the fill version.
+- MapLibre reads them with a plain raster source: a `tiles` URL template, with the same minzoom, maxzoom and bounds as
+  before.
+- Measured: 2,128 tiles (1,064 per style), 14.7 MiB (antique 6.2, tolkien 8.2), largest tile 32 KiB. The whole dist
+  is 2,158 files and 30.2 MiB.
+- The build enforces Pages' limits. It fails if any file exceeds 25 MiB, if the deployment reaches 20,000 files, or if
+  any `.pmtiles` file is present.
 - Without tiles, the build uses the OpenFreeMap basemap and labels it as a placeholder.
 
-R2 isn't needed. If tiles must ever be lossless, the options are R2 (a public bucket on a custom domain, with CORS for
-range requests) or z ≤ 11 PNG (16–18 MiB).
+**Why not PMTiles.** The first deploy used one PMTiles archive per style, and the painted map failed live. PMTiles
+reads its archive in HTTP range requests, but Cloudflare Pages doesn't answer them on `*.pages.dev`: every file comes
+back as 200 with the whole body. On a custom domain, ranges only work through the zone cache, for file extensions it
+caches, and `.pmtiles` isn't one of them. The local dev server had emulated ranges, which hid this.
+
+Guards against it coming back:
+- `scripts/serve.mjs` now behaves like Pages: it ignores `Range` and always answers 200 with the whole file.
+- `test/no-range.test.mjs` runs in CI. It fails if runtime code mentions PMTiles, a `Range` header, `bytes=` or a
+  custom tile protocol, or if a built dist breaks the Pages limits.
+- `test/tiles.mjs` (Playwright, local, needs the tiles) serves the built dist with `python -m http.server`, which has
+  no range support. At four views (z8 to z12) it checks that painted tiles load (58 tile responses, all 200 and
+  `image/webp`), that no request carries a `Range` header, and that there are no console errors.
+
+R2 isn't needed. If tiles ever had to be one archive, it would need R2 (a public bucket on a custom domain, with CORS
+for range requests).
 
 Licensing: the painted tiles are ODbL Produced Works from OpenStreetMap data plus Copernicus GLO-30. The footer always
 shows the manifest's attribution ("Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap
@@ -170,7 +187,8 @@ builds now draw no basemap at all.
     different blue, so the fill matched none of them; neighbouring painted chunks also met in visible straight lines
     out at sea.
   - **The fix:** `sea_fill.py` paints the open-sea chunks (`seed.sea_chunks`, the same rule that makes them playable)
-    into the PMTiles at build time, on the CPU, as ordinary tiles. They render exactly like painted ones at every zoom.
+    into the tile set at build time, on the CPU, as ordinary tiles. They render exactly like painted ones at every
+    zoom.
   - **How:** it works on one z12 canvas of the block, in five steps.
     1. Level the seams between painted chunks out at sea. Each side shifts by half the colour step, easing out over
        256 px. Sea pixels only, low frequencies only, so the grain stays as painted and the coasts keep their colour.
@@ -180,8 +198,7 @@ builds now draw no basemap at all.
     4. Mirror each painted neighbour's sea across the shared edge, easing into the fill over 320 px, so colour and
        grain are continuous at the edge itself.
     5. Write the block's tiles at every zoom from the canvas.
-  - **Cost:** about 40 s per style at build time (cached), and +1.2 MiB of PMTiles. 14.4 MiB in all, still well
-    under 25 MiB per file.
+  - **Cost:** about 40 s per style at build time (cached), and about +1.2 MiB of tiles.
   - **Checked:**
     - Before/after crops at z9.6, z11 and z12 across five boundaries (painted to gap, gap to gap), both styles:
       `arena-seams-<style>-<boundary>.png` in the review folder.

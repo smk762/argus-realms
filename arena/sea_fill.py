@@ -14,7 +14,7 @@ blue. This module paints them in as ordinary tiles, so they render exactly like 
    grain are continuous right at the edge.
 6. Write every tile of the block, at every zoom, from the canvas; the coarser zooms are downsampled from it.
 
-Pillow only. `fill()` writes a complete tile tree for `tiles_pack.pack`.
+Pillow only. `fill()` writes a complete tile tree for `tiles_webp.export`.
 """
 
 import random

@@ -10,8 +10,9 @@ What goes in:
   dependencies), downloaded once into arena/.cache and checked against the sha256 in Pyodide's lock file;
 - the game's Python as one zip: atlas_realms from src/, arena_bridge, and the pure-Python parts of argus-atlas and
   structlog from this environment (so the browser runs the versions the tests ran);
-- the world manifest (arena/world/cook-strait.json) and, with --tiles, the painted tiles packed into one PMTiles file
-  per style as WebP q88 (tiles_pack.py; cached in arena/.cache/tiles), read by MapLibre with the pmtiles protocol;
+- the world manifest (arena/world/cook-strait.json) and, with --tiles, the painted tiles as plain XYZ folders of WebP
+  q88 files (tiles/<style>/<z>/<x>/<y>.webp; tiles_webp.py, cached in arena/.cache/tiles), with the block's open sea
+  painted in (sea_fill.py). Plain files on purpose: Pages doesn't serve HTTP range requests (no PMTiles);
 - _headers with the CSP and cache rules for Cloudflare Pages.
 
 Needs the project venv (`make install`) and `npm ci` in arena/.
@@ -198,21 +199,20 @@ def world_manifest(tiles: Path | None) -> dict:
         have = {s["name"] for s in json.loads((tiles / "manifest.json").read_text())["styles"]}
         m["styles"] = [s for s in m["styles"] if s["name"] in have and (tiles / s["name"]).is_dir()]
         m["placeholder"] = not m["styles"]
-    m["tile_url"] = None  # XYZ PNGs are no longer served; see pmtiles_url
-    m["pmtiles_url"] = "tiles/{style}.pmtiles"
+    m["tile_url"] = "tiles/{style}/{z}/{x}/{y}.webp"  # plain files: Pages serves no range requests
     m["tile_format"] = f"webp q{TILE_QUALITY}"
     m["labels_url"] = "tiles/labels.geojson" if tiles and (tiles / "labels.geojson").exists() else None
     return m
 
 
 def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
-    """One PMTiles per style (WebP q88: indistinguishable from the PNGs at device scale 2 and ~10x smaller, see
-    DESIGN.md), with the block's open-sea chunks painted in (sea_fill.py), built once per set of source tiles and
-    cached."""
+    """An XYZ folder of WebP q88 tiles per style (indistinguishable from the PNGs at device scale 2 and ~10x smaller,
+    see DESIGN.md), with the block's open-sea chunks painted in (sea_fill.py), built once per set of source tiles and
+    cached. Returns the source tile count and the bytes written."""
     from sea_fill import VERSION as FILL_VERSION
     from sea_fill import fill
     from sea_fog import sea_sample
-    from tiles_pack import PAGES_MAX, pack
+    from tiles_webp import export
 
     from atlas_realms.seed import sea_chunks
 
@@ -223,23 +223,25 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
     for s in manifest["styles"]:
         src = sorted((tiles / s["name"]).rglob("*.png"))
         key = hashlib.sha256(
-            f"webp{TILE_QUALITY}:fill{FILL_VERSION}:{sorted(sea)}".encode()
+            f"xyz:webp{TILE_QUALITY}:fill{FILL_VERSION}:{sorted(sea)}".encode()
             + b"".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime_ns}".encode() for p in src)
         ).hexdigest()[:16]
-        cached = HERE / ".cache" / "tiles" / f"{s['name']}-{key}.pmtiles"
-        if not cached.exists():
+        cached = HERE / ".cache" / "tiles" / f"{s['name']}-{key}"
+        if not (cached / "done").exists():
             root = tiles
             got = sea_sample(tiles, s["name"], manifest)
             if got and sea:
                 root = HERE / ".cache" / "filled"
                 r = fill(tiles, s["name"], manifest, sea, got[0], root)
                 print(f"  painted {r['sea_chunks']} open-sea chunks into {s['name']} ({r['tiles_written']} tiles)")
-            print(f"  packing {s['name']} ({len(src)} source tiles, WebP q{TILE_QUALITY})")
-            pack(root, s["name"], cached, "webp", TILE_QUALITY, manifest["bounds"])
-        if cached.stat().st_size > PAGES_MAX:
-            sys.exit(f"{cached.name} is over the Pages 25 MiB limit")
-        shutil.copy2(cached, dest / f"{s['name']}.pmtiles")
-        n, size = n + len(src), size + cached.stat().st_size
+            print(f"  encoding {s['name']} ({len(src)} source tiles, WebP q{TILE_QUALITY})")
+            if cached.exists():
+                shutil.rmtree(cached)
+            export(root, s["name"], cached, TILE_QUALITY)
+            (cached / "done").write_text("")
+        shutil.copytree(cached, dest / s["name"], ignore=shutil.ignore_patterns("done"))
+        n += len(src)
+        size += sum(p.stat().st_size for p in (dest / s["name"]).rglob("*.webp"))
     if manifest["labels_url"]:
         shutil.copy2(tiles / "labels.geojson", dest / "labels.geojson")
     return n, size
@@ -282,8 +284,6 @@ def build(out: Path, tiles: Path | None) -> None:
     (out / "vendor" / "dh").mkdir(parents=True)
     for f in DH_FILES:
         shutil.copy2(DH / f, out / "vendor" / "dh" / f)
-    # The pmtiles protocol for MapLibre (pinned in package.json), served from 'self'.
-    shutil.copy2(HERE / "node_modules" / "pmtiles" / "dist" / "pmtiles.js", out / "vendor" / "pmtiles.js")
     for f in ("favicon.ico", "icon.svg", "apple-icon.png"):  # the argus-atlas favicon set, as site/ uses it
         shutil.copy2(ROOT / "site" / f, out / f)
     manifest = world_manifest(tiles)
@@ -309,7 +309,7 @@ def build(out: Path, tiles: Path | None) -> None:
         n, size = copy_tiles(tiles, out / "tiles", manifest)
         add_sea(tiles, out / "tiles", manifest)
         print(
-            f"  tiles: {n} source tiles -> {size / 2**20:.1f} MiB of PMTiles ({', '.join(s['name'] for s in manifest['styles'])})"
+            f"  tiles: {n} source tiles -> {size / 2**20:.1f} MiB of WebP tiles ({', '.join(s['name'] for s in manifest['styles'])})"
         )
     else:
         print("  tiles: none (placeholder basemap)")
@@ -319,8 +319,24 @@ def build(out: Path, tiles: Path | None) -> None:
     total = sum(p.stat().st_size for p in files)
     print(f"arena/dist: {len(files)} files, {total / 2**20:.1f} MiB; largest {biggest.relative_to(out)} "
           f"{biggest.stat().st_size / 2**20:.1f} MiB")  # fmt: skip
-    if biggest.stat().st_size > 25 * 2**20 or len(files) > 20_000:
-        sys.exit("over the Cloudflare Pages limits (25 MiB per file, 20,000 files)")
+    check_pages_limits(out, files)
+
+
+def check_pages_limits(out: Path, files: list[Path]) -> None:
+    """Cloudflare Pages: at most 25 MiB per file and 20,000 files per deployment. And plain files only: Pages doesn't
+    answer range requests, so nothing may need them (no .pmtiles)."""
+    from tiles_webp import PAGES_FILES, PAGES_MAX
+
+    big = [p for p in files if p.stat().st_size > PAGES_MAX]
+    if big:
+        sys.exit(f"over the Pages 25 MiB per-file limit: {', '.join(str(p.relative_to(out)) for p in big)}")
+    if len(files) >= PAGES_FILES:
+        sys.exit(f"{len(files)} files: over the Pages limit of {PAGES_FILES:,} per deployment")
+    ranged = [p for p in files if p.suffix == ".pmtiles"]
+    if ranged:
+        sys.exit(
+            f"range-request archives can't be served from Pages: {', '.join(str(p.relative_to(out)) for p in ranged)}"
+        )
 
 
 def main() -> None:

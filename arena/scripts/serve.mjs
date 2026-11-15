@@ -1,5 +1,6 @@
 // Local dev server for arena/dist: static files with the headers from dist/_headers (so the CSP is exercised as on
-// Cloudflare Pages) and HTTP range requests (PMTiles reads its archives in ranges). Loopback only.   node scripts/serve.mjs dist [port]
+// Cloudflare Pages). Like Pages on *.pages.dev, it ignores Range headers and always answers 200 with the whole file,
+// so nothing that depends on range requests can pass here and fail live. Loopback only.   node scripts/serve.mjs dist [port]
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -9,7 +10,7 @@ const port = Number(process.argv[3] || 8120);
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".json": "application/json", ".wasm": "application/wasm", ".zip": "application/zip", ".whl": "application/zip",
-  ".png": "image/png", ".pmtiles": "application/vnd.pmtiles", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".geojson": "application/geo+json",
+  ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".geojson": "application/geo+json",
 };
 
 // _headers: a path pattern line, then indented "Name: value" lines. "*" matches anything.
@@ -36,15 +37,6 @@ createServer(async (req, res) => {
     const body = await readFile(file);
     const headers = { "Content-Type": TYPES[extname(file)] || "application/octet-stream" };
     for (const r of rules) if (r.re.test(url.pathname)) for (const [k, v] of r.h) headers[k] = v;
-    headers["Accept-Ranges"] = "bytes";
-    const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || "");
-    if (range) {
-      const start = Number(range[1]), end = Math.min(range[2] ? Number(range[2]) : body.length - 1, body.length - 1);
-      if (start > end) { res.writeHead(416, { "Content-Range": `bytes */${body.length}` }).end(); return; }
-      headers["Content-Range"] = `bytes ${start}-${end}/${body.length}`;
-      res.writeHead(206, headers).end(body.subarray(start, end + 1));
-      return;
-    }
     res.writeHead(200, headers).end(body);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
