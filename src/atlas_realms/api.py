@@ -14,40 +14,15 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
-from atlas_realms.bots import PERSONALITIES
-from atlas_realms.rules.classes import CLASSES
-from atlas_realms.rules.tunables import DEFAULT
-from atlas_realms.solo import DEFAULT_ROSTER, SHIELD_LOOKS, Session, build_world
+from atlas_realms.protocol import SPAWNS, Control, Looks, NewSolo, OrderIn, check_new
+from atlas_realms.protocol import meta as solo_meta
+from atlas_realms.solo import Session, build_world
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "web"
 OUTLINE = ROOT / "data" / "nz_mainland.geojson"
-SPAWNS = [(-41.2865, 174.7762), (-41.2906, 174.0010)]  # Wellington side, Picton side
 MAX_SESSIONS = 50
-
-
-class NewSolo(BaseModel):
-    name: str = Field("You", min_length=1, max_length=24)
-    unit_class: str = "barbarian"
-    bots: list[str] = list(DEFAULT_ROSTER)
-    tick_every: float = Field(2.0, ge=0.25, le=60)
-    subscriber: bool = False
-
-
-class Looks(BaseModel):
-    shield: str
-
-
-class OrderIn(BaseModel):
-    kind: str
-    payload: dict = {}
-
-
-class Control(BaseModel):
-    paused: bool | None = None
-    tick_every: float | None = Field(None, ge=0.25, le=60)
 
 
 def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI:
@@ -67,20 +42,14 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
 
     @app.get("/api/meta")
     def meta() -> dict:
-        return {
-            "classes": {k: v.model_dump() for k, v in CLASSES.items()},
-            "personalities": {k: {"class": p.unit_class, "blurb": p.blurb} for k, p in PERSONALITIES.items()},
-            "shield_looks": SHIELD_LOOKS,
-            "shield_daily_hours": DEFAULT.shield_daily_hours,
-            "shield_cooldown_minutes": DEFAULT.shield_cooldown_minutes,
-        }
+        return solo_meta()
 
     @app.post("/api/solo")
     def new_solo(body: NewSolo) -> dict:
-        if body.unit_class not in CLASSES:
-            raise HTTPException(422, "unknown class")
-        if any(b not in PERSONALITIES for b in body.bots):
-            raise HTTPException(422, "unknown bot personality")
+        try:
+            check_new(body)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
         if len(sessions) >= MAX_SESSIONS:
             sessions.pop(next(iter(sessions)))  # oldest first
         world = build_world(manifest, outline, SPAWNS)

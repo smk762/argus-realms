@@ -183,6 +183,21 @@ def test_solo_session_runs_and_bots_play_differently():
     assert json.dumps(st)  # the state is plain JSON for the client
 
 
+def test_the_open_strait_is_sailable_and_never_claimed():
+    """With the all-sea chunks open (solo.build_world), water is for crossing, as the rules already say: you can route
+    into the middle of the strait, and in a long game nobody (bot or not) ever owns a water hex."""
+    manifest = json.loads((ROOT / "arena" / "world" / "cook-strait.json").read_text())
+    w = build_world(manifest, ROOT / "data" / "nz_mainland.geojson", [(-41.2865, 174.7762), (-41.2906, 174.0010)])
+    s = Session.new(w, "test", unit_class="marine", secret=b"strait" * 6)
+    mid_strait = h3.latlng_to_cell(-41.6, 174.6, 5)  # in chunk 10/1008/642, never baked
+    oid = s.submit("move", {"to": mid_strait})
+    s.step()
+    assert s.results[oid] == "ok" and s.world.units[1].path
+    for _ in range(600):
+        s.step()
+    assert not any(h.owner_id for h in s.world.hexes.values() if h.zone == "water")
+
+
 def test_a_hired_mercenary_leaves_its_range_to_hunt_its_mark_and_a_guard_goes_home_to_patrol():
     from atlas_realms.tick.world import Contract
 

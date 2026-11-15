@@ -89,6 +89,18 @@ Solo arena (the first playable mode; PvP on the shared Postgres world comes late
   and merges the chunks' `labels.geojson` (argus-atlas place names) into one `labels.geojson` the client draws.
 - `seed.py` — hexes from a manifest + outline (`plan_hexes`), into Postgres or (via `solo.build_world`) memory.
 - `web/` — the MapLibre client, no build step (`index.html`, `app.js`, `style.css`).
+- `protocol.py` — the solo API's request models, `meta()` and `SPAWNS`, without FastAPI (shared by `api.py` and `arena/`).
+
+`arena/` — the solo arena as a static site (realms.dragonhound.dev), design in `arena/DESIGN.md`. Pyodide runs the
+unchanged Python in a Web Worker: `arena/py/arena_bridge.py` answers the client's `/api/...` requests in-process (the
+wall clock passed in), `arena/src/app.js` is `web/app.js` talking to the worker and saving to localStorage.
+`arena/build.py` zips `src/atlas_realms` + argus-atlas + structlog, copies Pyodide (pinned in `arena/package.json`) and
+sha256-checked wheels, the world manifest (`arena/world/cook-strait.json`), optional tiles (packed by
+`arena/tiles_pack.py` into one WebP q88 PMTiles per style, under Pages' 25 MiB), and writes `_headers` (CSP
+with `'wasm-unsafe-eval'`). `make arena-test` = build + `arena/test/parity.test.mjs` (Pyodide vs CPython, same state
+every tick, and save/restore). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
+Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the
+label suffix, which `build.py` allows). Loading quotes live in `arena/src/quotes.json`: genuine, sourced words only.
 
 `src/atlas_realms/db.py` — psycopg autocommit connection (`ATLAS_REALMS_DSN`) and a forward-only migration runner over
 `src/atlas_realms/migrations/*.sql`, recorded in `schema_migrations`. Never edit an applied migration; add a new file.

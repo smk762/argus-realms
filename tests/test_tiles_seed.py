@@ -7,7 +7,7 @@ from pmtiles.tile import Compression, TileType, zxy_to_tileid
 from pmtiles.writer import Writer
 
 from atlas_realms.rules.chunks import cell_chunks
-from atlas_realms.seed import land_cells, plan_hexes
+from atlas_realms.seed import land_cells, plan_hexes, sea_chunks
 from atlas_realms.tiles import export
 
 NZ = Path(__file__).parent.parent / "data" / "nz_mainland.geojson"
@@ -124,3 +124,35 @@ def test_plan_hexes_rejects_spawn_far_from_land():
     land = land_cells(NZ, 5)
     with pytest.raises(ValueError, match="not on painted land"):
         plan_hexes({WELLINGTON}, land, [(-45.0, 178.0)])
+
+
+# -- open sea inside the painted block ------------------------------------------------------------
+
+COOK_STRAIT = json.loads((Path(__file__).parent.parent / "arena" / "world" / "cook-strait.json").read_text())
+BAKED = {tuple(c) for c in COOK_STRAIT["ready_chunks"]}
+
+
+def test_sea_chunks_are_the_ones_the_bake_plan_skipped_as_all_sea():
+    plan = (Path(__file__).parent.parent / "bakes" / "cook-strait.sh").read_text()
+    skipped = plan.split("all-sea chunks skipped: 19 ")[1].split("]")[0]
+    want = {tuple(int(v) for v in s.strip(" '[").split("/")) for s in skipped.split(",")}
+    assert sea_chunks(BAKED, NZ, 10) == want
+
+
+def test_an_unbaked_land_chunk_is_not_sea():
+    partial = BAKED - {WELLINGTON}  # a land chunk whose bake hasn't finished
+    sea = sea_chunks(partial, NZ, 10)
+    assert WELLINGTON not in sea and len(sea) == 19
+    assert sea_chunks(set(), NZ, 10) == set()
+    assert sea_chunks({WELLINGTON}, NZ, 10) == set()  # a one-chunk block has no candidates
+
+
+def test_the_strait_is_open_water_in_the_solo_world():
+    from atlas_realms.solo import build_world
+
+    w = build_world(COOK_STRAIT, NZ, [(-41.2865, 174.7762), (-41.2906, 174.0010)])
+    sea = sea_chunks(BAKED, NZ, 10)
+    assert w.ready_chunks == BAKED | sea
+    mid_strait = h3.latlng_to_cell(-41.6, 174.6, 5)  # chunk 10/1008/642: never baked, all sea
+    assert w.hexes[mid_strait].playable and w.hexes[mid_strait].zone == "water"
+    assert all(h.zone == "water" for c, h in w.hexes.items() if all(ch in sea for ch in cell_chunks(c, 10)))
