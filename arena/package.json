@@ -11,5 +11,8 @@
   "devDependencies": {
     "playwright": "1.65.1",
     "pyodide": "314.0.8"
+  },
+  "dependencies": {
+    "pmtiles": "4.5.0"
   }
 }

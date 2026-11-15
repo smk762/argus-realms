@@ -20,15 +20,36 @@ const check = (ok, what) => { console.log(`${ok ? "ok  " : "FAIL"} ${what}`); if
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
 const page = await context.newPage();
-// Missing painted tiles 404 by design (all-sea chunks were never baked); MapLibre shows the basemap there.
-const missingTiles = [];
-page.on("response", (r) => { if (r.status() === 404) (/\/tiles\/[a-z]+\/\d+\/\d+\/\d+\.png$/.test(r.url()) ? missingTiles : problems).push(`404 ${r.url()}`); });
+page.on("response", (r) => { if (r.status() >= 400) problems.push(`${r.status()} ${r.url()}`); });
 page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) problems.push(`console: ${m.text()}`); });
 page.on("pageerror", (e) => problems.push(`page error: ${e.message}`));
+
+// The loading card, caught mid-load on a throttled connection: light and dark at desktop width, and a 390 px phone.
+for (const [name, opts] of [
+  ["loading-light", { colorScheme: "light", viewport: { width: 1440, height: 900 } }],
+  ["loading-dark", { colorScheme: "dark", viewport: { width: 1440, height: 900 } }],
+  ["loading-390", { colorScheme: "dark", viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }],
+]) {
+  const ctx = await browser.newContext(opts), p = await ctx.newPage();
+  const cdp = await ctx.newCDPSession(p);
+  await cdp.send("Network.enable");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 40, downloadThroughput: 1.5e6, uploadThroughput: 5e5 });
+  await p.goto(url);
+  await p.waitForFunction(() => {
+    const bar = document.querySelector("#loader-bar"), q = document.querySelector(".quote.on blockquote");
+    return q && q.textContent && Number(bar.getAttribute("aria-valuenow")) > 20;
+  }, null, { timeout: 120_000 });
+  await p.waitForTimeout(1500); // let the first quote finish fading in
+  await shot(p, name);
+  const status = await p.textContent("#loading");
+  check(/Downloading/.test(status), `${name}: loading card with progress ("${status.trim()}") and a quote`);
+  await ctx.close();
+}
 
 const t0 = Date.now();
 await page.goto(url);
 await page.waitForSelector("dialog#start[open]", { timeout: 120_000 });
+check(await page.isHidden("#loader"), "loading card hidden when the game is ready");
 console.log(`rules engine ready in ${((Date.now() - t0) / 1000).toFixed(1)} s (cold load from localhost)`);
 await page.fill("input[name=name]", "Tester");
 await page.selectOption("#start-class", "barbarian");
@@ -104,7 +125,7 @@ const after = await state();
 check(after.tick >= before && after.players[0].name === "Tester", `reload restored the save (tick ${before} -> ${after.tick})`);
 await shot(page, "6-restored");
 
-console.log(`  ${missingTiles.length} painted-tile requests outside the baked chunks (404, expected)`);
+check(await page.isHidden("#loader"), "loading card hidden once the game is ready");
 const csp = problems.filter((p) => /Content Security Policy|Refused/.test(p));
 check(csp.length === 0, "no CSP violations");
 await browser.close();

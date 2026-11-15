@@ -35,18 +35,95 @@ const ready = new Promise((resolve, reject) => {
       waiting.delete(data.id);
       if (w) w(JSON.parse(data.res));
     } else if (data.progress) loading(data.progress);
-    else if (data.ready) { loading(""); resolve(); }
-    else if (data.fatal) { loading(`The rules engine failed to load: ${data.fatal}`, true); reject(new Error(data.fatal)); }
+    else if (data.ready) { loading({ step: "ready" }); resolve(); }
+    else if (data.fatal) { loadFailed(data.fatal); reject(new Error(data.fatal)); }
   };
-  worker.onerror = (e) => { loading(`The rules engine failed to load: ${e.message}`, true); reject(e); };
+  worker.onerror = (e) => { loadFailed(e.message); reject(e); };
 });
 
-function loading(text, error = false) {
+// -- loading card -------------------------------------------------------------------------------
+// A progress bar (real bytes while downloading, an indeterminate segment for each step after) and a quote that
+// crossfades every few seconds. The status line is a polite live region and changes once per step; the quotes are
+// not announced. Reduced motion: no shimmer, no fades, and one quote stays put.
+
+const STEPS = { // [where the bar is when the step starts, where it ends, status text]
+  download: [0, 75, "Downloading the game"],
+  python: [75, 86, "Starting Python (WebAssembly)…"],
+  packages: [86, 92, "Loading h3 and pydantic…"],
+  rules: [92, 99, "Loading the rules and the map of Cook Strait…"],
+  ready: [100, 100, "Ready"],
+};
+const QUOTE_MS = 5500;
+let loadStep = null;
+
+function loading({ step, loaded, total }) {
+  const [from, to, text] = STEPS[step], bar = $("loader-bar");
+  let pct = from;
+  if (step === "download" && total) pct = from + (to - from) * Math.min(1, loaded / total);
+  bar.style.setProperty("--p", `${pct}%`);
+  bar.style.setProperty("--next", `${to}%`);
+  bar.classList.toggle("busy", step !== "download" && step !== "ready");
+  if (step === "download" && total) {
+    bar.setAttribute("aria-valuenow", String(Math.round(pct)));
+    bar.setAttribute("aria-valuetext", `${(loaded / 2 ** 20).toFixed(1)} of ${(total / 2 ** 20).toFixed(1)} MB`);
+  } else if (step === "ready") {
+    bar.setAttribute("aria-valuenow", "100");
+    bar.removeAttribute("aria-valuetext");
+  } else {
+    bar.removeAttribute("aria-valuenow"); // indeterminate
+    bar.removeAttribute("aria-valuetext");
+  }
+  if (step !== loadStep) { // the live region speaks once per step, not on every byte
+    loadStep = step;
+    $("loading").textContent = step === "download" && total ? `${text} (${(total / 2 ** 20).toFixed(1)} MB, kept for next time)…` : text;
+  }
+}
+
+function loadFailed(why) {
   const el = $("loading");
-  if (!el) return;
-  el.textContent = text;
-  el.hidden = !text;
-  el.dataset.state = error ? "error" : "";
+  el.textContent = `The game failed to load: ${why}`;
+  el.dataset.state = "error";
+  $("loader-bar").classList.remove("busy");
+  clearInterval(quotes.timer);
+}
+
+function hideLoader() {
+  const el = $("loader");
+  clearInterval(quotes.timer);
+  if (REDUCED.matches) { el.hidden = true; return; }
+  el.classList.add("done");
+  setTimeout(() => { el.hidden = true; }, 400);
+}
+
+// Quotes from quotes.json: a random start, then a different random one each time (never the same twice running).
+async function quotes() {
+  let list;
+  try { list = (await (await fetch("quotes.json")).json()).quotes; } catch { return; }
+  if (!list || !list.length || $("loader").hidden) return;
+  const figs = [...document.querySelectorAll("#quotes .quote")];
+  let i = Math.floor(Math.random() * list.length), front = 0;
+  const show = (fig, q) => {
+    fig.querySelector("blockquote").textContent = q.text;
+    const cap = fig.querySelector("figcaption");
+    cap.textContent = `— ${q.who}`;
+    cap.title = q.source;
+  };
+  show(figs[0], list[i]);
+  figs[0].classList.add("on");
+  figs[0].removeAttribute("aria-hidden");
+  if (REDUCED.matches || list.length < 2) return; // one quote, no fades
+  quotes.timer = setInterval(() => {
+    let j;
+    do j = Math.floor(Math.random() * list.length); while (j === i);
+    i = j;
+    const back = 1 - front;
+    show(figs[back], list[i]);
+    figs[back].classList.add("on");
+    figs[back].removeAttribute("aria-hidden");
+    figs[front].classList.remove("on");
+    figs[front].setAttribute("aria-hidden", "true");
+    front = back;
+  }, QUOTE_MS);
 }
 
 function rpc(req) {
@@ -103,6 +180,10 @@ function toast(text) {
 // -- map ---------------------------------------------------------------------------------------
 
 function initMap() {
+  if (manifest.pmtiles_url && !initMap.protocol) {
+    initMap.protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", initMap.protocol.tile);
+  }
   const [w, s, e, n] = manifest.bounds;
   const padX = (e - w) * 0.6, padY = (n - s) * 0.6;
   map = new maplibregl.Map({
@@ -127,8 +208,8 @@ function addLayers() {
   for (const s of manifest.styles) {
     map.addSource(`paint-${s.name}`, {
       type: "raster",
-      // Built by hand: URL() would percent-encode the {z}/{x}/{y} placeholders MapLibre fills in.
-      tiles: [`${BASE}${manifest.tile_url.replace("{style}", s.name)}`],
+      // One PMTiles archive per style (WebP), read in HTTP ranges by the pmtiles protocol (vendor/pmtiles.js).
+      url: `pmtiles://${BASE}${manifest.pmtiles_url.replace("{style}", s.name)}`,
       tileSize: 256,
       minzoom: manifest.minzoom,
       maxzoom: manifest.maxzoom,
@@ -1219,12 +1300,14 @@ function wireShieldOptions() {
 
 async function main() {
   // The map comes up while the rules engine loads (a few MB of WebAssembly, cached after the first visit).
+  quotes();
   manifest = await (await fetch("manifest.json")).json();
   $("placeholder").hidden = !manifest.placeholder;
   await initMap();
   addLayers();
   await ready;
   meta = await api("/api/meta");
+  hideLoader();
   wirePanel();
   const blob = store.get(SAVE_KEY);
   if (blob) {

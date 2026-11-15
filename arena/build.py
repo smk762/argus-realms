@@ -10,7 +10,8 @@ What goes in:
   dependencies), downloaded once into arena/.cache and checked against the sha256 in Pyodide's lock file;
 - the game's Python as one zip: atlas_realms from src/, arena_bridge, and the pure-Python parts of argus-atlas and
   structlog from this environment (so the browser runs the versions the tests ran);
-- the world manifest (arena/world/cook-strait.json) and, with --tiles, the painted tiles;
+- the world manifest (arena/world/cook-strait.json) and, with --tiles, the painted tiles packed into one PMTiles file
+  per style as WebP q88 (tiles_pack.py; cached in arena/.cache/tiles), read by MapLibre with the pmtiles protocol;
 - _headers with the CSP and cache rules for Cloudflare Pages.
 
 Needs the project venv (`make install`) and `npm ci` in arena/.
@@ -28,6 +29,7 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 ROOT = HERE.parent
 SRC = HERE / "src"
 DH = ROOT / "site" / "vendor" / "dh"
@@ -35,6 +37,7 @@ PYODIDE = HERE / "node_modules" / "pyodide"
 CACHE = HERE / ".cache" / "wheels"
 PYODIDE_CORE = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json")
 PACKAGES = ("h3", "pydantic")  # loadPackage() pulls their dependencies from the lock file
+TILE_QUALITY = 88  # WebP quality for the painted tiles (DESIGN.md: q80-q92 and AVIF compared)
 DH_FILES = ("dh-theme.js", "dh-tokens.css", "dh-strip.css", "dh-badge.css")
 # argus-atlas parts the browser never imports (servers, CLI, model backends, templates).
 ATLAS_SKIP = ("server", "backends", "templates", "cli.py", "__pycache__")
@@ -50,9 +53,17 @@ def _strip_markup(html: str) -> str:
     return re.sub(r">\s+<", "><", re.sub(r"<!--.*?-->", "", html, flags=re.S)).strip()
 
 
+# The strip's label suffix ("recorded output") is fixed in dh-shared 1.2.2; the arena says what it is instead.
+# Only this span may differ from the vendored strip.
+LABEL_MORE = re.compile(r'(<span class="dh-strip-more">)[^<]*(</span>)')
+ARENA_LABEL_MORE = " · runs in your browser"
+
+
 def check_page(html: str) -> None:
-    """The family strip is pasted unedited, <html> marks Realms current, and there is no inline script or style."""
-    if _strip_markup((DH / "dh-strip.html").read_text()) not in _strip_markup(html):
+    """The family strip is pasted unedited (bar the label suffix), <html> marks Realms current, and there is no inline
+    script or style."""
+    want = LABEL_MORE.sub(lambda m: m[1] + ARENA_LABEL_MORE + m[2], (DH / "dh-strip.html").read_text())
+    if _strip_markup(want) not in _strip_markup(html):
         sys.exit("arena/src/index.html: the strip differs from site/vendor/dh/dh-strip.html; paste it again, unedited")
     if not re.search(r'<html\b[^>]*\sdata-dh-site="realms"', html):
         sys.exit('arena/src/index.html: <html> needs data-dh-site="realms"')
@@ -187,19 +198,34 @@ def world_manifest(tiles: Path | None) -> dict:
         have = {s["name"] for s in json.loads((tiles / "manifest.json").read_text())["styles"]}
         m["styles"] = [s for s in m["styles"] if s["name"] in have and (tiles / s["name"]).is_dir()]
         m["placeholder"] = not m["styles"]
-    m["tile_url"] = "tiles/{style}/{z}/{x}/{y}.png"
+    m["tile_url"] = None  # XYZ PNGs are no longer served; see pmtiles_url
+    m["pmtiles_url"] = "tiles/{style}.pmtiles"
+    m["tile_format"] = f"webp q{TILE_QUALITY}"
     m["labels_url"] = "tiles/labels.geojson" if tiles and (tiles / "labels.geojson").exists() else None
     return m
 
 
 def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
+    """One PMTiles per style (WebP q88: indistinguishable from the PNGs at device scale 2 and ~10x smaller, see
+    DESIGN.md), packed once per set of source tiles and cached."""
+    from tiles_pack import PAGES_MAX, pack
+
+    dest.mkdir(parents=True, exist_ok=True)
     n = size = 0
     for s in manifest["styles"]:
-        for p in sorted((tiles / s["name"]).rglob("*.png")):
-            out = dest / s["name"] / p.relative_to(tiles / s["name"])
-            out.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(p, out)
-            n, size = n + 1, size + p.stat().st_size
+        src = sorted((tiles / s["name"]).rglob("*.png"))
+        key = hashlib.sha256(
+            f"webp{TILE_QUALITY}".encode()
+            + b"".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime_ns}".encode() for p in src)
+        ).hexdigest()[:16]
+        cached = HERE / ".cache" / "tiles" / f"{s['name']}-{key}.pmtiles"
+        if not cached.exists():
+            print(f"  packing {s['name']} ({len(src)} tiles, WebP q{TILE_QUALITY})")
+            pack(tiles, s["name"], cached, "webp", TILE_QUALITY, manifest["bounds"])
+        if cached.stat().st_size > PAGES_MAX:
+            sys.exit(f"{cached.name} is over the Pages 25 MiB limit")
+        shutil.copy2(cached, dest / f"{s['name']}.pmtiles")
+        n, size = n + len(src), size + cached.stat().st_size
     if manifest["labels_url"]:
         shutil.copy2(tiles / "labels.geojson", dest / "labels.geojson")
     return n, size
@@ -219,17 +245,34 @@ def build(out: Path, tiles: Path | None) -> None:
     (out / "vendor" / "dh").mkdir(parents=True)
     for f in DH_FILES:
         shutil.copy2(DH / f, out / "vendor" / "dh" / f)
+    # The pmtiles protocol for MapLibre (pinned in package.json), served from 'self'.
+    shutil.copy2(HERE / "node_modules" / "pmtiles" / "dist" / "pmtiles.js", out / "vendor" / "pmtiles.js")
     for f in ("favicon.ico", "icon.svg", "apple-icon.png"):  # the argus-atlas favicon set, as site/ uses it
         shutil.copy2(ROOT / "site" / f, out / f)
     manifest = world_manifest(tiles)
     packages = copy_pyodide(out / "pyodide")
     py = python_zip(out / "py", manifest)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
-    (out / "arena.json").write_text(json.dumps({"python": f"py/{py}", "packages": packages}))
+    # Everything the worker downloads before Python starts, with sizes, so the loading bar shows real progress.
+    preload = [f"pyodide/{f}" for f in PYODIDE_CORE] + sorted(
+        f"pyodide/{w.name}" for w in (out / "pyodide").glob("*.whl")
+    )
+    preload.append(f"py/{py}")
+    (out / "arena.json").write_text(
+        json.dumps(
+            {
+                "python": f"py/{py}",
+                "packages": packages,
+                "preload": [{"url": u, "bytes": (out / u).stat().st_size} for u in preload],
+            }
+        )
+    )
     (out / "_headers").write_text(headers())
     if tiles is not None and not manifest["placeholder"]:
         n, size = copy_tiles(tiles, out / "tiles", manifest)
-        print(f"  tiles: {n} files, {size / 2**20:.1f} MiB ({', '.join(s['name'] for s in manifest['styles'])})")
+        print(
+            f"  tiles: {n} source tiles -> {size / 2**20:.1f} MiB of PMTiles ({', '.join(s['name'] for s in manifest['styles'])})"
+        )
     else:
         print("  tiles: none (placeholder basemap)")
     files = [p for p in out.rglob("*") if p.is_file()]

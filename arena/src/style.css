@@ -190,12 +190,44 @@ fieldset label { justify-content: flex-start; font-size: 13px; }
 #options label[hidden] { display: none; }
 :focus-visible { outline: var(--dh-focus-ring); outline-offset: var(--dh-focus-offset); }
 /* Shown while the rules engine (Python in WebAssembly) loads, and over the map when there are no painted tiles. */
-#loading {
-  position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 3; margin: 0;
-  padding: 6px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line);
-  font-size: var(--dh-text-xs); color: var(--ink);
+/* The loading card: the shared tokens, so it follows the light/dark theme like the strip. */
+#loader {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 4; box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px)); padding: 18px 20px 16px; border-radius: var(--dh-radius-lg);
+  background: color-mix(in srgb, var(--dh-surface) 96%, transparent); color: var(--dh-text);
+  border: 1px solid var(--dh-border); box-shadow: var(--dh-shadow-1);
+  transition: opacity var(--dh-dur-slow) var(--dh-ease-in);
 }
-#loading[data-state="error"] { color: var(--bad); }
+#loader.done { opacity: 0; pointer-events: none; }
+#loader h2 { margin: 0 0 12px; font-size: var(--dh-text-lg); letter-spacing: .02em; }
+#loader h2 span { color: var(--dh-muted); font-weight: normal; font-size: var(--dh-text-sm); }
+#loader-bar {
+  position: relative; height: 8px; border-radius: var(--dh-radius-pill); overflow: hidden;
+  background: color-mix(in srgb, var(--dh-border) 70%, transparent);
+}
+#loader-bar span {
+  position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); border-radius: inherit; background: var(--dh-accent);
+  transition: width .25s linear;
+}
+/* A step that can't be measured: the bar's next segment shimmers. */
+#loader-bar.busy::after {
+  content: ""; position: absolute; inset: 0 0 0 var(--p, 0%); width: calc(var(--next, 10%) - var(--p, 0%));
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--dh-accent) 55%, transparent) 0 8px, transparent 8px 16px);
+  background-size: 22.6px 100%; animation: loader-busy 1s linear infinite;
+}
+@keyframes loader-busy { to { background-position: 22.6px 0; } }
+#loading { margin: 8px 0 14px; font-size: var(--dh-text-xs); color: var(--dh-muted); }
+#loading[data-state="error"] { color: var(--dh-danger-ink); }
+/* Both quotes share one grid cell, so they crossfade in place and the card is as tall as the longer one. */
+#quotes { display: grid; }
+.quote {
+  grid-area: 1 / 1; margin: 0; opacity: 0;
+  transition: opacity 1.2s var(--dh-ease);
+}
+.quote.on { opacity: 1; }
+.quote blockquote { margin: 0; font-style: italic; font-size: var(--dh-text-md); line-height: 1.45; }
+.quote figcaption { margin-top: 6px; color: var(--dh-muted); font-size: var(--dh-text-xs); }
+.quote figcaption cite { font-style: normal; }
 #placeholder {
   position: absolute; left: 52px; top: calc(var(--dh-strip-h) + 92px); z-index: 3; margin: 0; /* under the title */
   max-width: min(420px, calc(100vw - 32px)); padding: 6px 12px; border-radius: 10px; box-sizing: border-box;
@@ -203,5 +235,6 @@ fieldset label { justify-content: flex-start; font-size: 13px; }
   font-size: var(--dh-text-xs);
 }
 @media (prefers-reduced-motion: reduce) {
+  #loader-bar.busy::after { animation: none; }
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }

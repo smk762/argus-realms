@@ -28,8 +28,8 @@ Comparison:
 
 | | TypeScript port | Pyodide (chosen) |
 |---|---|---|
-| Download | ~150 KB of JS + h3-js (~0.5 MB) | 15.4 MiB on disk, ~8.6 MB gzipped on the wire; cached (immutable) after the first visit |
-| Cold start | instant | ~7 s on a desktop from localhost (WebAssembly compile + packages, measured in Chromium and Node); add the download on a real network. The map shows while it loads. |
+| Download | ~150 KB of JS + h3-js (~0.5 MB) | 15.3 MB of Pyodide, wheels and game (~8.6 MB gzipped on the wire); cached (immutable) after the first visit |
+| Cold start | instant | ~7 s on a desktop from localhost (WebAssembly compile + packages, measured in Chromium and Node); add the download on a real network. The map and a loading card with real download progress show while it loads. |
 | Per tick | <1 ms | 16.5 ms on average over 600 ticks (CPython: ~8 ms), in the worker, off the main thread; the arena runs at most 6 ticks/s (4×) |
 | Fidelity | a second implementation of every rule; drifts with every engine change unless each one is ported too | the same source files as the server; no fork |
 | Determinism | needs bit-exact MT19937 + Python string seeding + float formatting in JS | identical by construction; the parity test confirms it across Python 3.12 → 3.14 and h3 4.5 → 4.4 |
@@ -106,26 +106,68 @@ The painted Cook Strait tiles are baked on the GPU host by `bakes/cook-strait.sh
 | of which z12 | 480 files, 43.2 MiB | 480 files, 47.6 MiB | |
 | one PMTiles, PNG, z5–12 | 59.6 MiB | 65.8 MiB | over the 25 MiB file limit |
 | one PMTiles, PNG, z5–11 | 16.4 MiB | 18.2 MiB | fits, but loses the native z12 detail |
-| XYZ re-encoded to WebP q85, z5–12 | 5.1 MiB | 6.4 MiB | |
-| … WebP q92 | 7.6 MiB | 9.3 MiB | |
 | Source chunks (`var/maps`, 60 `fantasy.pmtiles`) | | | 122.7 MiB |
 
-Cloudflare Pages allows 25 MiB per file and 20,000 files.
+Cloudflare Pages allows 25 MiB per file and 20,000 files, so a lossless PMTiles per style (60–66 MiB) doesn't fit. Every lossy
+encoding below fits with room to spare. Each one was packed into one PMTiles file per style (`tiles_pack.py`, z5–12,
+658 tiles, method 6 for WebP, speed 6 for AVIF). PSNR is measured against the PNGs over the 480 z12 tiles:
 
-- **Now (this PR):** the build copies the XYZ PNGs (`build.py --tiles var/tiles`). 1,316 files and a 163 KiB largest
-  file are well inside Pages' limits, so this deploys as is. Without tiles the build uses the OpenFreeMap basemap and
-  says so on the map and in the credits ("Placeholder basemap").
-- **Recommended next:** one PMTiles file per style with **WebP** tiles, z5–12: about 5–9 MiB each, so they fit on Pages
-  as single files served with HTTP range requests, keep full z12 detail, and cut the transfer by ~10×. Needs the
-  `pmtiles` JS protocol (vendored, `'self'` in the CSP), an export step next to `atlas_realms.tiles`, and a visual check
-  of q85 vs q92 on the painted styles.
-- **If PNG must stay lossless:** a PMTiles per style is 60–66 MiB, so either Cloudflare R2 (public bucket on a custom
-  domain such as a `tiles.` subdomain, CORS for range requests, one more origin in `connect-src`), or z ≤ 11 (16–18 MiB,
-  fits) and accept upscaled z12. Splitting per zoom doesn't help on its own: z12 alone is 43–48 MiB.
+| Encoding | antique | tolkien | both | z12 PSNR (antique / tolkien) |
+|---|---|---|---|---|
+| PNG (original) | 59.6 MiB | 65.8 MiB | 125.3 MiB | lossless |
+| WebP lossless | 36.7 MiB | 37.9 MiB | 74.6 MiB | lossless, still over 25 MiB |
+| WebP q92 | 7.35 MiB | 9.06 MiB | 16.4 MiB | 42.4 / 42.9 dB |
+| **WebP q88 (chosen)** | **5.73 MiB** | **7.18 MiB** | **12.9 MiB** | **40.7 / 41.0 dB** |
+| WebP q85 | 4.90 MiB | 6.20 MiB | 11.1 MiB | 39.7 / 39.9 dB |
+| WebP q80 | 3.97 MiB | 5.09 MiB | 9.1 MiB | 38.4 / 38.3 dB |
+| AVIF q70 | 4.43 MiB | 5.20 MiB | 9.6 MiB | 40.1 / 39.9 dB |
+| AVIF q60 | 3.32 MiB | 3.87 MiB | 7.2 MiB | 38.5 / 37.7 dB |
+
+The side-by-side renders (`arena-tiles-<style>-<view>.png` in the review folder) show both styles at device scale 2,
+with the same views of each variant: z8 (the whole strait), z10 (the Marlborough Sounds coast), and z12 (the Wellington
+harbour coast, and Tararua Range relief). Tolkien's pen hatching is the hardest content. At q80 and AVIF q70 the
+fine strokes soften visibly at z12. At q85 the difference only shows when you flip between images. At q88 I couldn't
+tell it from the PNG.
+
+**Pick: WebP q88**, one PMTiles per style (5.7 and 7.2 MiB). It looks the same as the PNGs at the zoom where detail
+matters, and it is 10× smaller.
+- q92 costs 27% more bytes for a difference nobody will see.
+- AVIF is about 10–15% smaller at the same PSNR, but it softens the hatching more at equal size, encodes about 10× slower,
+  and decodes slower on low-end phones. MapLibre and pmtiles do handle it, so AVIF is a possible later switch.
+- Lossless WebP for the low zooms only would add about 1 MiB for zooms where q88 is already indistinguishable.
+- The painted tiles have no text in them (this export has no `labels.geojson`). Place names come from the basemap,
+  under the fog, so label legibility doesn't depend on the tile encoding.
+
+How it is served:
+- `build.py --tiles var/tiles` packs `dist/tiles/<style>.pmtiles`. The pack is cached in `arena/.cache/tiles`, keyed on
+  the source tiles, and the build fails above 25 MiB.
+- The client registers the `pmtiles://` protocol, from `vendor/pmtiles.js` (pmtiles 4.5.0, pinned, served from `'self'`).
+- Pages answers range requests on static files. `scripts/serve.mjs` does the same locally.
+- Without tiles, the build uses the OpenFreeMap basemap and labels it as a placeholder.
+
+R2 isn't needed. If tiles must ever be lossless, the options are R2 (a public bucket on a custom domain, with CORS for
+range requests) or z ≤ 11 PNG (16–18 MiB).
 
 Licensing: the painted tiles are ODbL Produced Works from OpenStreetMap data plus Copernicus GLO-30. The footer always
 shows the manifest's attribution ("Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap
 contributors") and the basemap's OpenFreeMap / OpenMapTiles / OpenStreetMap links.
+
+## Loading
+
+The worker first downloads everything Pyodide will need, as listed in `arena.json` with sizes (15.3 MB). It counts
+bytes, so the bar shows real progress for the download, which takes up three quarters of the bar. Pyodide's own requests
+for those files are then answered from memory. This matters because, measured in Chromium, the 9 MB wasm otherwise
+downloaded twice: the HTTP cache didn't keep it. The steps after that (start Python, load h3 and pydantic, import the
+rules and build the world) can't be measured, so each one shows as a shimmering segment of the bar.
+
+The card shows a quote from `src/quotes.json`, in the style of Civilization's loading quotes: italic text with
+"— Name" beneath, and the source as a tooltip. Each entry names the work it comes from, and only well-attested words are
+included. The quote crossfades every 5.5 s, starting at random and never showing the same quote twice in a row.
+
+Accessibility: the status line is a polite live region, and its text changes once per step, not on every byte. The bar
+is a `progressbar` (no value while a step is indeterminate). The quotes are not a live region. Under reduced motion
+there is no shimmer and no fade, and one quote stays put. The card uses the shared tokens, so it follows the light/dark
+theme. It fades out (or is simply hidden, under reduced motion) once the game is ready.
 
 ## Static build and CSP
 
@@ -137,6 +179,10 @@ name) are served `immutable`; the page, `arena.json` and `manifest.json` are `no
 
 The Dragonhound shared layer is copied from `site/vendor/dh` at build time (one vendored copy in git, pinned by
 `.dh-shared.json`); `<html data-dh-site="realms">` marks Realms current, and the build fails if the pasted strip drifts.
+The strip's label suffix reads "runs in your browser" instead of dh-shared's fixed "recorded output". dh-shared 1.2.2
+has no option for it (`labelMore` is a constant in `dh-strip.mjs`, and the CSS only hides the span on phones). So the
+arena pastes the strip with that one span changed, and `build.py` allows that difference and no other. The upstream fix
+would be a per-site label suffix in `dh-strip.mjs`, for example a `labelMore` override or a `data-dh-label` attribute.
 The strip doesn't list Realms-the-game yet: the current Realms link moves to Atlas, and a Realms link is added when the
 game ships. Reduced motion: camera moves don't animate and CSS transitions are off under `prefers-reduced-motion`.
 

@@ -1,0 +1,32 @@
+{
+  "_comment": "Loading-screen quotes. Only well-attested words with the work they come from; no apocrypha. Translations are public domain (named where the wording follows one). Add more in the same shape.",
+  "quotes": [
+    {"text": "All warfare is based on deception.", "who": "Sun Tzu", "source": "The Art of War I.18, trans. Lionel Giles (1910)"},
+    {"text": "Supreme excellence consists in breaking the enemy's resistance without fighting.", "who": "Sun Tzu", "source": "The Art of War III.2, trans. Lionel Giles (1910)"},
+    {"text": "If you know the enemy and know yourself, you need not fear the result of a hundred battles.", "who": "Sun Tzu", "source": "The Art of War III.18, trans. Lionel Giles (1910)"},
+    {"text": "Appear at points which the enemy must hasten to defend; march swiftly to places where you are not expected.", "who": "Sun Tzu", "source": "The Art of War VI.5, trans. Lionel Giles (1910)"},
+    {"text": "All Gaul is divided into three parts.", "who": "Julius Caesar", "source": "Commentaries on the Gallic War I.1"},
+    {"text": "The die is cast.", "who": "Julius Caesar", "source": "at the Rubicon, 49 BC; Suetonius, Life of Julius Caesar 32"},
+    {"text": "I came, I saw, I conquered.", "who": "Julius Caesar", "source": "after Zela, 47 BC; Suetonius, Life of Julius Caesar 37"},
+    {"text": "The sinews of war: money without limit.", "who": "Cicero", "source": "Philippics V.5"},
+    {"text": "In time of war the laws fall silent.", "who": "Cicero", "source": "Pro Milone 11"},
+    {"text": "Make haste slowly.", "who": "Augustus", "source": "Suetonius, Life of Augustus 25 (festina lente)"},
+    {"text": "If I were not Alexander, I would be Diogenes.", "who": "Alexander the Great", "source": "Plutarch, Life of Alexander 14"},
+    {"text": "If we are victorious in one more battle with the Romans, we shall be utterly ruined.", "who": "Pyrrhus of Epirus", "source": "Plutarch, Life of Pyrrhus 21, trans. Bernadotte Perrin (1920)"},
+    {"text": "The strong do what they can and the weak suffer what they must.", "who": "Thucydides", "source": "History of the Peloponnesian War V.89 (the Melian dialogue), trans. Richard Crawley (1874)"},
+    {"text": "The sea! The sea!", "who": "Xenophon", "source": "Anabasis IV.7.24, the Ten Thousand sighting the Black Sea"},
+    {"text": "War is the father of all and the king of all.", "who": "Heraclitus", "source": "Fragment B53, trans. John Burnet (1920)"},
+    {"text": "They make a solitude and call it peace.", "who": "Tacitus", "source": "Agricola 30 (the speech of Calgacus), trans. Church and Brodribb (1877)"},
+    {"text": "He, therefore, who desires peace, should prepare for war.", "who": "Vegetius", "source": "De Re Militari, preface to Book III, trans. John Clarke (1767)"},
+    {"text": "Give me a place to stand, and I will move the earth.", "who": "Archimedes", "source": "Pappus of Alexandria, Collection VIII"},
+    {"text": "It is much safer to be feared than loved, when, of the two, either must be dispensed with.", "who": "Niccolò Machiavelli", "source": "The Prince, ch. 17, trans. W. K. Marriott (1908)"},
+    {"text": "A prince ought to have no other aim or thought, nor select anything else for his study, than war and its rules and discipline.", "who": "Niccolò Machiavelli", "source": "The Prince, ch. 14, trans. W. K. Marriott (1908)"},
+    {"text": "From the sublime to the ridiculous there is but one step.", "who": "Napoleon Bonaparte", "source": "to the Abbé de Pradt in Warsaw, December 1812; de Pradt, Histoire de l'ambassade dans le grand-duché de Varsovie (1815)"},
+    {"text": "I, whose ambition leads me not only farther than any other man has been before me, but as far as I think it possible for man to go.", "who": "James Cook", "source": "journal, 30 January 1774, at his farthest south"},
+    {"text": "War is a mere continuation of policy by other means.", "who": "Carl von Clausewitz", "source": "On War I.1.24, trans. J. J. Graham (1873)"},
+    {"text": "Everything is very simple in War, but the simplest thing is difficult.", "who": "Carl von Clausewitz", "source": "On War I.7, trans. J. J. Graham (1873)"},
+    {"text": "No plan of operations extends with any certainty beyond the first contact with the main hostile force.", "who": "Helmuth von Moltke the Elder", "source": "Über Strategie (1871)"},
+    {"text": "A house divided against itself cannot stand.", "who": "Abraham Lincoln", "source": "House Divided speech, Springfield, 16 June 1858"},
+    {"text": "With malice toward none, with charity for all.", "who": "Abraham Lincoln", "source": "Second Inaugural Address, 4 March 1865"}
+  ]
+}
