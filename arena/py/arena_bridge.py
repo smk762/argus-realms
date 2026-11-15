@@ -1,0 +1,212 @@
+"""The solo arena in one process: what `atlas_realms.api` serves over HTTP, as `Arena.call()`.
+
+The browser build runs this in Pyodide inside a Web Worker (`arena/src/worker.mjs`); the parity tests run it under
+CPython too. There is no server: the client's requests become calls here, with the wall clock passed in (`now`, in
+seconds) so the lazy catch-up ticking works exactly as on the server. One session per tab, id "local".
+
+Seeding: the session's battle secret is its game seed (32 bytes, random unless the client passes `seed`). Bots and
+the news desk already derive their randomness from it, so a seed plus the same orders at the same ticks replays the
+game. The shared world's drand beacon is not used here.
+
+Saving: `save()` returns the session as a compressed, versioned blob for the client's localStorage, `restore()`
+reads one back. A blob from another build of the rules is refused (409) rather than loaded into changed dataclasses.
+"""
+
+import base64
+import hashlib
+import json
+import os
+import pickle
+import sys
+import threading
+import types
+import zlib
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+
+def _stub_db_driver() -> None:
+    """psycopg has no Pyodide build. `atlas_realms.seed` and `atlas_realms.db` import it at module level for the shared
+    world's database path, which the solo arena never takes; a stub keeps those imports working and fails loudly if
+    anything does try to connect."""
+    try:
+        import psycopg  # noqa: F401
+    except ImportError:
+
+        def no_db(*_a, **_k):
+            raise RuntimeError("no database in the browser build")
+
+        pg = types.ModuleType("psycopg")
+        pg.Connection = object
+        pg.connect = no_db
+        pg_types = types.ModuleType("psycopg.types")
+        pg_json = types.ModuleType("psycopg.types.json")
+        pg_json.Jsonb = no_db
+        pg.types, pg_types.json = pg_types, pg_json
+        sys.modules.update({"psycopg": pg, "psycopg.types": pg_types, "psycopg.types.json": pg_json})
+
+
+_stub_db_driver()
+
+from pydantic import ValidationError  # noqa: E402
+
+from atlas_realms.protocol import SPAWNS, Control, Looks, NewSolo, OrderIn, check_new, meta  # noqa: E402
+from atlas_realms.solo import Session, build_world  # noqa: E402
+
+SID = "local"
+SAVE_VERSION = 1
+
+
+class HttpError(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
+def rules_build() -> str:
+    """A short hash of the game's Python sources: saves are only loaded by the build that wrote them."""
+    import atlas_realms
+
+    root = Path(atlas_realms.__file__).parent
+    h = hashlib.sha256()
+    for p in sorted(root.rglob("*.py")):
+        if p.name == "_version.py":  # written from git at install time, not part of the rules
+            continue
+        h.update(p.relative_to(root).as_posix().encode() + b"\0" + p.read_bytes())
+    return h.hexdigest()[:16]
+
+
+class Arena:
+    def __init__(self, manifest: dict, outline: Path):
+        self.manifest = manifest
+        self.outline = Path(outline)
+        self.session: Session | None = None
+        self.build = rules_build()
+
+    # -- the API --------------------------------------------------------------------------------
+
+    def call(self, method: str, url: str, body: dict | None = None, now: float = 0.0) -> dict:
+        """One request, routed like atlas_realms.api. Raises HttpError for what the server answers 4xx."""
+        parts = urlsplit(url)
+        path = [p for p in parts.path.split("/") if p]
+        query = {k: v[-1] for k, v in parse_qs(parts.query).items()}
+        try:
+            return self._route(method.upper(), path, query, body or {}, now)
+        except ValidationError as e:
+            raise HttpError(422, e.errors(include_url=False)[0]["msg"]) from e
+
+    def _route(self, method: str, path: list[str], query: dict, body: dict, now: float) -> dict:
+        if path == ["api", "manifest"]:
+            return self.manifest
+        if path == ["api", "meta"]:
+            return meta()
+        if path == ["api", "solo"] and method == "POST":
+            return self.new(body, now)
+        if len(path) != 4 or path[:2] != ["api", "solo"]:
+            raise HttpError(404, "not found")
+        s = self._get(path[2])
+        verb = path[3]
+        if verb == "hexes":
+            return s.hex_geojson()
+        if verb == "fog":
+            return s.fog()
+        if verb == "state":
+            s.catch_up(now)
+            return s.state()
+        if verb == "orders" and method == "POST":
+            o = OrderIn.model_validate(body)
+            try:
+                return {"id": s.submit(o.kind, o.payload)}
+            except ValueError as e:
+                raise HttpError(422, str(e)) from e
+        if verb == "control" and method == "POST":
+            c = Control.model_validate(body)
+            s.catch_up(now)
+            if c.paused is not None:
+                s.paused = c.paused
+            if c.tick_every is not None:
+                s.tick_every = c.tick_every
+            return {"paused": s.paused, "tick_every": s.tick_every}
+        if verb == "report":
+            s.catch_up(now)
+            return s.report(int(query.get("since", 0)))
+        if verb == "looks" and method == "POST":
+            lk = Looks.model_validate(body)
+            try:
+                s.set_look(lk.shield)
+            except PermissionError as e:
+                raise HttpError(403, str(e)) from e
+            except ValueError as e:
+                raise HttpError(422, str(e)) from e
+            return {"shield": lk.shield}
+        raise HttpError(404, "not found")
+
+    def _get(self, sid: str) -> Session:
+        if sid != SID or self.session is None:
+            raise HttpError(404, "no such session")
+        return self.session
+
+    def new(self, body: dict, now: float) -> dict:
+        body = dict(body)
+        seed = body.pop("seed", None)
+        req = NewSolo.model_validate(body)
+        try:
+            check_new(req)
+            secret = bytes.fromhex(seed) if seed else os.urandom(32)
+        except ValueError as e:
+            raise HttpError(422, str(e)) from e
+        world = build_world(self.manifest, self.outline, SPAWNS)
+        s = Session.new(
+            world, req.name, req.unit_class, tuple(req.bots), req.subscriber, tick_every=req.tick_every, secret=secret
+        )
+        s._last = now
+        self.session = s
+        return {"id": SID, "seed": secret.hex()}
+
+    # -- saving ---------------------------------------------------------------------------------
+
+    def save(self) -> str:
+        """The session as text for localStorage: base64(zlib(pickle)), with the save format and rules build."""
+        s = self._get(SID)
+        fields = {k: v for k, v in vars(s).items() if k != "lock"}
+        raw = pickle.dumps({"v": SAVE_VERSION, "build": self.build, "session": fields}, protocol=5)
+        return base64.b64encode(zlib.compress(raw, 6)).decode()
+
+    def restore(self, blob: str, now: float, away: str | None = None) -> dict:
+        """Load a save. `away` is what the client's "When away" setting did as the tab closed: "pause" keeps the time
+        it was closed out of the game, "shield" raises the shield before the missed ticks are caught up."""
+        try:
+            data = pickle.loads(zlib.decompress(base64.b64decode(blob)))  # noqa: S301 - the player's own save
+        except Exception as e:
+            raise HttpError(422, "unreadable save") from e
+        if data.get("v") != SAVE_VERSION or data.get("build") != self.build:
+            raise HttpError(409, "saved by another version of the game")
+        s = Session.__new__(Session)
+        vars(s).update(data["session"])
+        s.lock = threading.Lock()
+        if away == "pause":
+            s.paused = True
+            s._last = now
+        elif away == "shield":
+            s.submit("shield", {"on": True})
+        self.session = s
+        return {"id": SID, "seed": s.secret.hex(), "tick": s.world.tick}
+
+    # -- the worker's entry point ---------------------------------------------------------------
+
+    def handle(self, request: str) -> str:
+        """JSON in, JSON out, for the worker: {op, method, url, body, now, blob, away} -> {status, body}."""
+        r = json.loads(request)
+        try:
+            op = r.get("op", "call")
+            if op == "call":
+                out = self.call(r["method"], r["url"], r.get("body"), r["now"])
+            elif op == "save":
+                out = {"blob": self.save(), "tick": self._get(SID).world.tick}
+            elif op == "restore":
+                out = self.restore(r["blob"], r["now"], r.get("away"))
+            else:
+                raise HttpError(400, f"unknown op {op}")
+            return json.dumps({"status": 200, "body": out})
+        except HttpError as e:
+            return json.dumps({"status": e.status, "body": {"detail": e.detail}})

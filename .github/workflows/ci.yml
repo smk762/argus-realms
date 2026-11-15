@@ -47,6 +47,30 @@ jobs:
           node-version: 22
       - run: node site/vendor/dh/sync-shared.mjs --check . --against https://dragonhound.dev/brand/v1/manifest.json --allow-outdated
 
+  # The browser arena (arena/): build it without tiles and check that the Pyodide bundle plays the same game as the
+  # CPython reference, tick for tick (arena/test/parity.test.mjs).
+  arena:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: arena/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: arena/.cache
+          key: pyodide-wheels-${{ hashFiles('arena/package-lock.json') }}
+      - run: uv venv --python 3.12 && uv pip install -e ".[server,dev]"
+      - run: npm ci --prefix arena
+      - run: make arena-test
+
   # Schema and tick tests against Postgres 16 + PostGIS + h3-pg, built from db/Dockerfile.
   db:
     runs-on: ubuntu-latest

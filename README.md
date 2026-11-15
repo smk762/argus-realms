@@ -71,6 +71,16 @@ make install
 make preview         # export var/maps -> var/tiles, serve the solo arena on http://127.0.0.1:8110
 ```
 
+**In the browser, no server** (`arena/`): the same solo arena as a static site. Pyodide runs the Python rules, engine
+and bots in a Web Worker, the game saves to localStorage, and a parity test checks the bundle plays the same game as
+CPython tick for tick. See [arena/DESIGN.md](arena/DESIGN.md).
+
+```bash
+npm ci --prefix arena
+make arena-dev       # build arena/dist (painted tiles from var/tiles if present) and serve it on http://127.0.0.1:8120
+make arena-test      # the parity test
+```
+
 ## Develop
 
 ```bash
