@@ -81,6 +81,10 @@ make arena-dev       # build arena/dist (painted tiles from var/tiles if present
 make arena-test      # the parity test
 ```
 
+The painted tiles ship as plain XYZ folders of WebP files (`tiles/<style>/<z>/<x>/<y>.webp`, about 15 MiB for both
+styles), not PMTiles. Cloudflare Pages doesn't serve HTTP range requests on `*.pages.dev`, and on a custom domain only
+for file types the zone caches, so an archive read in ranges fails live. See `arena/DESIGN.md`.
+
 ## Develop
 
 ```bash

@@ -182,10 +182,6 @@ function toast(text) {
 // -- map ---------------------------------------------------------------------------------------
 
 function initMap() {
-  if (manifest.pmtiles_url && !initMap.protocol) {
-    initMap.protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol("pmtiles", initMap.protocol.tile);
-  }
   const [w, s, e, n] = manifest.bounds;
   const [lw, ls, le, ln] = manifest.fog.limits; // the baked block plus a margin, all of it under the mist image
   map = new maplibregl.Map({
@@ -238,8 +234,9 @@ function addLayers() {
   for (const s of manifest.styles) {
     map.addSource(`paint-${s.name}`, {
       type: "raster",
-      // One PMTiles archive per style (WebP), read in HTTP ranges by the pmtiles protocol (vendor/pmtiles.js).
-      url: `pmtiles://${BASE}${manifest.pmtiles_url.replace("{style}", s.name)}`,
+      // Plain XYZ files (WebP), each fetched whole: Cloudflare Pages serves no range requests. Built by hand: URL()
+      // would percent-encode the {z}/{x}/{y} placeholders MapLibre fills in.
+      tiles: [`${BASE}${manifest.tile_url.replace("{style}", s.name)}`],
       tileSize: 256,
       minzoom: manifest.minzoom,
       maxzoom: manifest.maxzoom,

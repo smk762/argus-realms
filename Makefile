@@ -3,7 +3,7 @@ UV ?= uv
 TEST_DSN ?= postgresql://atlas:atlas@127.0.0.1:5433/postgres
 
 .PHONY: help install lint format test test-db check static-check sim db-up db-down migrate tick tiles static sea-masks preview clean \
-	arena arena-check arena-test arena-dev
+	arena arena-check arena-test arena-dev arena-tiles-test
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -75,9 +75,12 @@ arena:  ## Build the browser arena into arena/dist (painted tiles from $$TILES i
 arena-check:  ## Check arena/index.html without building: pasted strip, marker, no inline scripts or styles, CSP
 	$(UV) run --no-sync python arena/build.py --check
 
-arena-test:  ## Build the arena without tiles and run the parity test (Pyodide bundle vs CPython)
+arena-test:  ## Build the arena without tiles; parity test (Pyodide vs CPython) and the no-range-requests check
 	$(UV) run --no-sync python arena/build.py
 	cd arena && PYTHON=$(CURDIR)/.venv/bin/python npm test
+
+arena-tiles-test: arena  ## Painted tiles load from a server without range support, like Pages (Playwright, local)
+	cd arena && node test/tiles.mjs
 
 arena-dev: arena  ## Build and serve the arena on http://127.0.0.1:8120 (static, with the CSP from _headers)
 	node arena/scripts/serve.mjs arena/dist 8120
