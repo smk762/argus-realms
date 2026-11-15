@@ -4,7 +4,8 @@ Guidance for AI agents working in this repo. Human-facing usage lives in [README
 
 ## What this is
 
-The browser game that demonstrates argus-atlas, plus the static map demo at https://realms.dragonhound.dev (`site/`).
+The browser game that demonstrates argus-atlas, plus the static map demo, Atlas, at https://atlas.dragonhound.dev (`site/`). realms.dragonhound.dev is reserved
+for the game and redirects to Atlas until the game is hosted.
 The design doc (not public) is the source of truth for rules and numbers; `Tunables` and the tests mirror it.
 
 The game consumes argus-atlas as a pip package (and, later, through a GPU bake worker). General map
@@ -137,6 +138,6 @@ make preview   # export var/maps -> var/tiles and serve the solo arena on http:/
   `.dh-shared.json`: re-sync it from dragonhound-site (`node scripts/sync-shared.mjs <this repo> --dest site/vendor/dh`)
   and check it with `node site/vendor/dh/sync-shared.mjs --check .`; never edit the copies. The build inlines its
   stylesheets into `index.html` (hashed by the CSP) and fails if the strip pasted into `index.html` drifts from
-  `dh-strip.html` (pasted unedited; `data-dh-site="realms"` on `<html>` marks Realms current, and `dh-theme.js`
+  `dh-strip.html` (pasted unedited; `data-dh-site="atlas"` on `<html>` marks Atlas current, and `dh-theme.js`
   adds `aria-current` and keeps the toggle's `aria-pressed` in sync). Never set `font` on `html` (the tokens are rem);
   panel text uses the `--dh-text-*` sizes, 12 px (`--dh-text-2xs`) at the smallest. Favicons are the argus-atlas set from argus-cortex `brand/packages/atlas/favicon/`, copied unchanged (all rights reserved).

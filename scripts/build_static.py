@@ -1,4 +1,4 @@
-"""Build the static map demo (realms.dragonhound.dev) from exported tiles.
+"""Build the static map demo, Atlas (atlas.dragonhound.dev), from exported tiles.
 
     python scripts/build_static.py --tiles var/tiles-areas --out dist/static
 
@@ -118,8 +118,8 @@ def _strip_markup(html: str) -> str:
 
 
 def check_strip(html: str) -> None:
-    """site/index.html carries dh-strip.html inline (no JS, no fetch), unedited, and marks Realms current with
-    data-dh-site="realms" on <html> (dh-strip.css shows it, dh-theme.js adds aria-current). Fail the build if the
+    """site/index.html carries dh-strip.html inline (no JS, no fetch), unedited, and marks Atlas current with
+    data-dh-site="atlas" on <html> (dh-strip.css shows it, dh-theme.js adds aria-current). Fail the build if the
     pasted strip drifted from the vendored copy (generated from dh-strip.mjs) or the marker is missing."""
     want = SKIP_LINK + _strip_markup((ROOT / "site" / "vendor" / "dh" / "dh-strip.html").read_text())
     if want not in _strip_markup(html):
@@ -127,8 +127,8 @@ def check_strip(html: str) -> None:
             "site/index.html: the demo strip differs from site/vendor/dh/dh-strip.html or does not follow the skip "
             "link; paste it again, unedited, right after the skip link"
         )
-    if not re.search(r'<html\b[^>]*\sdata-dh-site="realms"', html):
-        sys.exit('site/index.html: <html> needs data-dh-site="realms" to mark Realms current in the strip')
+    if not re.search(r'<html\b[^>]*\sdata-dh-site="atlas"', html):
+        sys.exit('site/index.html: <html> needs data-dh-site="atlas" to mark Atlas current in the strip')
 
 
 def tile_xy(lon: float, lat: float, z: int) -> tuple[float, float]:

@@ -1,13 +1,13 @@
 # Argus Realms
 
-<!-- Live demo: https://realms.dragonhound.dev -->
+<!-- Live demo: https://atlas.dragonhound.dev -->
 
-Real islands painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. The live demo is at **[realms.dragonhound.dev](https://realms.dragonhound.dev)**.
+Real islands painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. The hosted demo is **Atlas**, at **[atlas.dragonhound.dev](https://atlas.dragonhound.dev)**. realms.dragonhound.dev is reserved for the Realms minigame; until the game is hosted it redirects to Atlas.
 
 The repo holds two things:
 
-- **The map demo** (`site/`), a fully static page. Iceland and Réunion are each painted in all seven argus-atlas styles (antique, tolkien, imhof, watercolor, cyberpunk, minecraft, pixel), with OpenStreetMap place names on top. An opacity slider fades the painting into the basemap, which shows that the coastlines stay put.
-- **Realms, the minigame** (`src/atlas_realms/`, `web/`), a work-in-progress territory game played on the same painted maps. It needs its own server and isn't part of the hosted demo yet. See [The minigame](#the-minigame).
+- **Atlas, the map demo** (`site/`), a fully static page served at atlas.dragonhound.dev. Iceland and Réunion are each painted in all seven argus-atlas styles (antique, tolkien, imhof, watercolor, cyberpunk, minecraft, pixel), with OpenStreetMap place names on top. An opacity slider fades the painting into the basemap, which shows that the coastlines stay put.
+- **Realms, the minigame** (`src/atlas_realms/`, `web/`), a work-in-progress territory game played on the same painted maps. It needs its own server and isn't hosted yet; it will live at realms.dragonhound.dev. See [The minigame](#the-minigame).
 
 ## What the demo shows
 
