@@ -231,6 +231,29 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict) -> tuple[int, int]:
     return n, size
 
 
+def add_fog(out: Path, manifest: dict) -> None:
+    """The mist outside the baked block, and the pan limits it covers (sea_fog.py)."""
+    from sea_fog import fog_image
+
+    image, limits, corners = fog_image(manifest["bounds"])
+    (out / "fog.webp").write_bytes(image)
+    manifest["fog"] = {"image": "fog.webp", "coordinates": corners, "limits": limits}
+
+
+def add_sea(tiles: Path, dest: Path, manifest: dict) -> None:
+    """Each style's own sea (colour and texture) for the block's unbaked, all-sea chunks (sea_fog.py)."""
+    from sea_fog import sea_sample
+
+    for s in manifest["styles"]:
+        got = sea_sample(tiles, s["name"], manifest)
+        if got is None:
+            continue
+        s["sea"], texture = got
+        (dest / f"sea-{s['name']}.png").write_bytes(texture)
+        s["sea_texture"] = f"tiles/sea-{s['name']}.png"
+        print(f"  sea for {s['name']}: {s['sea']} ({len(texture) / 1024:.0f} KiB texture)")
+
+
 # -- main ------------------------------------------------------------------------------------------
 
 
@@ -250,9 +273,9 @@ def build(out: Path, tiles: Path | None) -> None:
     for f in ("favicon.ico", "icon.svg", "apple-icon.png"):  # the argus-atlas favicon set, as site/ uses it
         shutil.copy2(ROOT / "site" / f, out / f)
     manifest = world_manifest(tiles)
+    add_fog(out, manifest)
     packages = copy_pyodide(out / "pyodide")
     py = python_zip(out / "py", manifest)
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=1))
     # Everything the worker downloads before Python starts, with sizes, so the loading bar shows real progress.
     preload = [f"pyodide/{f}" for f in PYODIDE_CORE] + sorted(
         f"pyodide/{w.name}" for w in (out / "pyodide").glob("*.whl")
@@ -270,11 +293,13 @@ def build(out: Path, tiles: Path | None) -> None:
     (out / "_headers").write_text(headers())
     if tiles is not None and not manifest["placeholder"]:
         n, size = copy_tiles(tiles, out / "tiles", manifest)
+        add_sea(tiles, out / "tiles", manifest)
         print(
             f"  tiles: {n} source tiles -> {size / 2**20:.1f} MiB of PMTiles ({', '.join(s['name'] for s in manifest['styles'])})"
         )
     else:
         print("  tiles: none (placeholder basemap)")
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=1))  # after the tiles: they add each style's sea
     files = [p for p in out.rglob("*") if p.is_file()]
     biggest = max(files, key=lambda p: p.stat().st_size)
     total = sum(p.stat().st_size for p in files)

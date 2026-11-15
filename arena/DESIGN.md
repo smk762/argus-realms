@@ -152,6 +152,37 @@ Licensing: the painted tiles are ODbL Produced Works from OpenStreetMap data plu
 shows the manifest's attribution ("Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap
 contributors") and the basemap's OpenFreeMap / OpenMapTiles / OpenStreetMap links.
 
+## Fog and sea: no basemap showing
+
+The painted block is 7 × 7 chunks, but only 30 were baked. The other 19 were skipped by the bake plan because they hold
+no land (its test: no `data/nz_mainland.geojson` land cell touches the chunk). The first version drew the OpenFreeMap
+basemap under everything, so grey showed around the block and in the sea gaps between the painted rectangles. Painted
+builds now draw no basemap at all.
+
+- **Outside the block: fog.** `sea_fog.py` writes `fog.webp`, a dark mist (the game fog's `#0d0f13` with soft lighter
+  wisps) laid out in Web Mercator over the block plus a 30% margin.
+  - It is opaque outside the block and fades to clear about one hex (17 km) inside its edge.
+  - MapLibre draws it as an image layer above the painting.
+  - `maxBounds` is the mist's extent. MapLibre won't zoom out past the point where those limits fill the view, so the
+    start view (about z8 on a desktop) is also the furthest out you can go. No part of the world beyond the mist shows.
+- **Inside the block, where nothing was baked: painted sea.** These chunks are all sea by the bake plan's own land test,
+  so this is the cheap ocean mask, and no OSM coastline is needed.
+  - The map's background is each style's own sea: the median colour of the painted pixels along chunk edges that face
+    a skipped chunk (antique `#4e7985`, tolkien `#567a81`).
+  - On top of that colour goes a texture made from the calmest sea tile at z12, mirrored 2 × 2 so it repeats without
+    seams and shifted to that median colour.
+  - The texture switches with the map style.
+  - Limitations: the texture is a fixed screen-pixel pattern, so its grain doesn't scale with zoom the way the painting
+    does; and a faint edge can show where a painted chunk meets the texture.
+- **In play:** hexes that touch an unbaked chunk aren't playable (the existing rule), so the middle of the strait sits
+  under the game's own fog once a game starts. The painted sea shows there faintly, through the fog.
+  - Counting all-sea chunks as "ready" would open the strait to play. That is a rules change for the user to decide
+    (`World.ready_chunks` / `plan_hexes`).
+- **Place names:** town and city names (OpenFreeMap `place` layer, city and town only, from z8) are drawn on the
+  painting in the parchment style, inside the block only and under the fog.
+- **Placeholder build (no tiles):** keeps the OpenFreeMap basemap and says so, with the same mist and pan limits
+  outside the block.
+
 ## Loading
 
 The worker first downloads everything Pyodide will need, as listed in `arena.json` with sizes (15.3 MB). It counts

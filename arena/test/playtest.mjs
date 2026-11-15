@@ -21,6 +21,8 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME || un
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
 const page = await context.newPage();
 page.on("response", (r) => { if (r.status() >= 400) problems.push(`${r.status()} ${r.url()}`); });
+let basemapStyle = false; // painted builds draw no basemap (fog and painted sea instead); only the placeholder does
+page.on("request", (r) => { if (r.url().includes("/styles/positron")) basemapStyle = true; });
 page.on("console", (m) => { if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) problems.push(`console: ${m.text()}`); });
 page.on("pageerror", (e) => problems.push(`page error: ${e.message}`));
 
@@ -126,6 +128,9 @@ check(after.tick >= before && after.players[0].name === "Tester", `reload restor
 await shot(page, "6-restored");
 
 check(await page.isHidden("#loader"), "loading card hidden once the game is ready");
+const placeholder = await page.evaluate(() => manifest.placeholder);
+check(placeholder === basemapStyle, placeholder ? "placeholder build: OpenFreeMap basemap" : "painted build: no basemap, fog and painted sea");
+check(await page.evaluate(() => map.getZoom() >= map.getMinZoom() && !!map.getLayer("mist")), "mist over the area outside the block");
 const csp = problems.filter((p) => /Content Security Policy|Refused/.test(p));
 check(csp.length === 0, "no CSP violations");
 await browser.close();

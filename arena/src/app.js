@@ -185,13 +185,22 @@ function initMap() {
     maplibregl.addProtocol("pmtiles", initMap.protocol.tile);
   }
   const [w, s, e, n] = manifest.bounds;
-  const padX = (e - w) * 0.6, padY = (n - s) * 0.6;
+  const [lw, ls, le, ln] = manifest.fog.limits; // the baked block plus a margin, all of it under the mist image
   map = new maplibregl.Map({
     container: "map",
-    style: "https://tiles.openfreemap.org/styles/positron",
+    // Painted builds draw no basemap: the painted tiles, each style's own sea between them, and fog outside the block
+    // (addLayers). Only the placeholder build (no tiles) shows the OpenFreeMap basemap, and says so.
+    style: manifest.placeholder ? "https://tiles.openfreemap.org/styles/positron" : {
+      version: 8,
+      glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      sources: {},
+      layers: [{ id: "sea", type: "background", paint: { "background-color": manifest.styles[0]?.sea || FOG } }],
+    },
     bounds: [[w, s], [e, n]],
-    maxBounds: [[w - padX, s - padY], [e + padX, n + padY]], // no panning off into the fog
-    minZoom: 6,
+    // Panning stops at the edge of the mist, and MapLibre won't zoom out past the point where the limits fill the
+    // view, so no part of the world beyond them ever shows.
+    maxBounds: [[lw, ls], [le, ln]],
+    minZoom: 7,
     maxZoom: manifest.maxzoom, // the painted map's native detail
     attributionControl: false, // credits are in the footer (renderAttribution)
   });
@@ -201,6 +210,25 @@ function initMap() {
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
   return new Promise((resolve) => map.on("load", resolve));
+}
+
+const FOG = "#0d0f13"; // the game's fog colour; the mist image (fog.webp) is built around it
+
+// The block's unbaked chunks are all sea (the bake plan skipped them for having no land), so the background is the
+// style's own painted sea: its colour, with a texture cut from its calmest sea tile.
+async function seaTextures() {
+  await Promise.all(manifest.styles.filter((s) => s.sea_texture).map(async (s) => {
+    const img = await map.loadImage(`${BASE}${s.sea_texture}`);
+    map.addImage(`sea-${s.name}`, img.data, { pixelRatio: 2 });
+  }));
+  setSea(store.get("style") || manifest.styles[0]?.name);
+}
+
+function setSea(name) {
+  const s = manifest.styles.find((x) => x.name === name);
+  if (manifest.placeholder || !s) return;
+  map.setPaintProperty("sea", "background-color", s.sea || FOG);
+  if (s.sea_texture && map.hasImage(`sea-${s.name}`)) map.setPaintProperty("sea", "background-pattern", `sea-${s.name}`);
 }
 
 function addLayers() {
@@ -234,8 +262,27 @@ function addLayers() {
       paint: { "text-color": "#2b2116", "text-halo-color": "#f3ead7", "text-halo-width": 1.5 },
     });
   }
+  // Painted builds: the basemap's town names, styled to sit on the painting, only inside the block (and under the fog,
+  // like the land they name). The placeholder build has the basemap's own labels.
+  if (!manifest.placeholder) {
+    map.addSource("places", { type: "vector", url: "https://tiles.openfreemap.org/planet", bounds: manifest.bounds });
+    map.addLayer({
+      id: "places", type: "symbol", source: "places", "source-layer": "place",
+      filter: ["match", ["get", "class"], ["city", "town"], true, false],
+      minzoom: 8,
+      layout: {
+        "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]], "text-font": ["Noto Sans Regular"],
+        "text-size": ["match", ["get", "class"], "city", 14, 12],
+      },
+      paint: { "text-color": "#2b2116", "text-halo-color": "#f3ead7", "text-halo-width": 1.5 },
+    });
+  }
   map.addSource("fog", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addLayer({ id: "fog", type: "fill", source: "fog", paint: { "fill-color": "#0d0f13", "fill-opacity": 0.88 } });
+  map.addLayer({ id: "fog", type: "fill", source: "fog", paint: { "fill-color": FOG, "fill-opacity": 0.88 } });
+  // Fog outside the baked block: a mist image over the pan limits, opaque outside the block and fading out about one
+  // hex inside it (sea_fog.py). The game's own fog (above) covers the unplayable hexes the same colour.
+  map.addSource("mist", { type: "image", url: `${BASE}${manifest.fog.image}`, coordinates: manifest.fog.coordinates });
+  map.addLayer({ id: "mist", type: "raster", source: "mist", paint: { "raster-fade-duration": 0, "raster-resampling": "linear" } });
   map.addSource("hexes", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addSource("route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   // Other units cluster when zoomed out so stacks don't spam icons; yours is its own source and never clusters.
@@ -336,6 +383,7 @@ function setStyle(name) {
   for (const s of manifest.styles) {
     map.setLayoutProperty(`paint-${s.name}`, "visibility", s.name === name ? "visible" : "none");
   }
+  setSea(name);
   store.set("style", name);
 }
 
@@ -1305,6 +1353,7 @@ async function main() {
   $("placeholder").hidden = !manifest.placeholder;
   await initMap();
   addLayers();
+  seaTextures().catch(() => {}); // the flat sea colour stays if a texture can't load
   await ready;
   meta = await api("/api/meta");
   hideLoader();
