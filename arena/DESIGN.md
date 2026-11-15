@@ -264,12 +264,10 @@ name) are served `immutable`; the page, `arena.json` and `manifest.json` are `no
 
 The Dragonhound shared layer is copied from `site/vendor/dh` at build time (one vendored copy in git, pinned by
 `.dh-shared.json`); `<html data-dh-site="realms">` marks Realms current, and the build fails if the pasted strip drifts.
-The strip's label suffix reads "runs in your browser" instead of dh-shared's fixed "recorded output". dh-shared 1.2.3
-has no option for it (`labelMore` is a constant in `dh-strip.mjs`, and the CSS only hides the span on phones). So the
-arena pastes the strip with that one span changed, and `build.py` allows that difference and no other. The upstream fix
-would be a per-site label suffix in `dh-strip.mjs`, for example a `labelMore` override or a `data-dh-label` attribute.
-The strip (dh-shared 1.2.3) lists Atlas where Realms was; a Realms link is added when the
-game ships. Reduced motion: camera moves don't animate and CSS transitions are off under `prefers-reduced-motion`.
+The strip's label suffix reads "runs in your browser" instead of the default "recorded output": `data-dh-label="browser"`
+on `<html>` picks it (dh-shared 1.2.4; the pasted strip carries both suffixes and `dh-strip.css` shows one), so the
+strip is pasted unedited and `build.py` checks it exactly. The strip (dh-shared 1.2.4) lists Lightbox, Studio, Atlas,
+Cull and Realms. Reduced motion: camera moves don't animate and CSS transitions are off under `prefers-reduced-motion`.
 
 ## Commands
 

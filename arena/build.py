@@ -53,20 +53,15 @@ def _strip_markup(html: str) -> str:
     return re.sub(r">\s+<", "><", re.sub(r"<!--.*?-->", "", html, flags=re.S)).strip()
 
 
-# The strip's label suffix ("recorded output") is fixed in dh-shared 1.2.3; the arena says what it is instead.
-# Only this span may differ from the vendored strip.
-LABEL_MORE = re.compile(r'(<span class="dh-strip-more">)[^<]*(</span>)')
-ARENA_LABEL_MORE = " · runs in your browser"
-
-
 def check_page(html: str) -> None:
-    """The family strip is pasted unedited (bar the label suffix), <html> marks Realms current, and there is no inline
-    script or style."""
-    want = LABEL_MORE.sub(lambda m: m[1] + ARENA_LABEL_MORE + m[2], (DH / "dh-strip.html").read_text())
-    if _strip_markup(want) not in _strip_markup(html):
+    """The family strip is pasted unedited, <html> marks Realms current and picks the "runs in your browser" label
+    suffix (dh-shared 1.2.4 data-dh-label), and there is no inline script or style."""
+    if _strip_markup((DH / "dh-strip.html").read_text()) not in _strip_markup(html):
         sys.exit("arena/src/index.html: the strip differs from site/vendor/dh/dh-strip.html; paste it again, unedited")
     if not re.search(r'<html\b[^>]*\sdata-dh-site="realms"', html):
         sys.exit('arena/src/index.html: <html> needs data-dh-site="realms"')
+    if not re.search(r'<html\b[^>]*\sdata-dh-label="browser"', html):
+        sys.exit('arena/src/index.html: <html> needs data-dh-label="browser" (strip label: "runs in your browser")')
     if re.search(r"<script\b(?![^>]*\bsrc=)[^>]*>", html, re.I):
         sys.exit("arena/src/index.html has an inline <script>: the CSP allows none")
     if re.search(r"<style\b|\sstyle=", html, re.I):
