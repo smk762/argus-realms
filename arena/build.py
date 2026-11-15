@@ -53,7 +53,7 @@ def _strip_markup(html: str) -> str:
     return re.sub(r">\s+<", "><", re.sub(r"<!--.*?-->", "", html, flags=re.S)).strip()
 
 
-# The strip's label suffix ("recorded output") is fixed in dh-shared 1.2.2; the arena says what it is instead.
+# The strip's label suffix ("recorded output") is fixed in dh-shared 1.2.3; the arena says what it is instead.
 # Only this span may differ from the vendored strip.
 LABEL_MORE = re.compile(r'(<span class="dh-strip-more">)[^<]*(</span>)')
 ARENA_LABEL_MORE = " · runs in your browser"
