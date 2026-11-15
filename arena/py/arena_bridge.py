@@ -54,7 +54,7 @@ from atlas_realms.protocol import SPAWNS, Control, Looks, NewSolo, OrderIn, chec
 from atlas_realms.solo import Session, build_world  # noqa: E402
 
 SID = "local"
-SAVE_VERSION = 1
+SAVE_VERSION = 2  # 2: the open strait (all-sea chunks in the block are playable); older saves are refused
 
 
 class HttpError(Exception):

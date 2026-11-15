@@ -19,7 +19,7 @@ from atlas_realms.fog import fog_geojson
 from atlas_realms.news import digest, events_of
 from atlas_realms.rules.classes import CLASSES
 from atlas_realms.rules.tunables import DEFAULT, Tunables
-from atlas_realms.seed import land_cells, plan_hexes
+from atlas_realms.seed import land_cells, plan_hexes, sea_chunks
 from atlas_realms.tick.engine import (
     SERVICES,
     BattleRecord,
@@ -50,7 +50,10 @@ DEFAULT_ROSTER = ("settler", "raider", "warden", "corsair", "sapper", "jackal", 
 
 
 def build_world(manifest: dict, outline: Path, spawns: list[tuple[float, float]], t: Tunables = DEFAULT) -> World:
-    ready = {tuple(c) for c in manifest["ready_chunks"]}
+    """The solo world: the baked chunks plus the open sea inside the painted block (`sea_chunks`), which needs no
+    painting, so a strait between baked coasts is open water to play on rather than fog."""
+    baked = {tuple(c) for c in manifest["ready_chunks"]}
+    ready = baked | sea_chunks(baked, outline, t.chunk_zoom)
     rows = plan_hexes(ready, land_cells(outline, t.h3_resolution), spawns, t)
     hexes = {
         r["h3"]: Hex(h3=r["h3"], zone=r["zone"], terrain=r["terrain"], tier=r["tier"], playable=r["playable"])
