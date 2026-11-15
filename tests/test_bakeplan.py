@@ -2,7 +2,7 @@ import io
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from atlas_realms.bakeplan import canvas_bbox, dem_bbox, main, raster_order
+from atlas_realms.bakeplan import RELEASE_IMAGE, canvas_bbox, dem_bbox, main, raster_order
 
 NZ = Path(__file__).parent.parent / "data" / "nz_mainland.geojson"
 
@@ -44,3 +44,18 @@ def test_plan_skips_sea_and_writes_one_chunk_per_style():
     assert "--layer places=" not in script
     assert script.count("argus-atlas labels --job /data/out/atlas/antique/") == 7
     assert "labels --job /data/out/atlas/tolkien/" not in script
+
+
+def test_area_plan_writes_under_areas_with_the_release_image():
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(
+            ["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--styles", "antique,tolkien", "--land", str(NZ)]
+            + ["--area", "--image", RELEASE_IMAGE]
+        )
+    script = buf.getvalue()
+    assert f"-v $ATLAS_MAPS:/data/out/atlas {RELEASE_IMAGE}" in script
+    assert "docker build" not in script  # a released image is pulled, not built
+    assert 'mkdir -p "$ATLAS_MAPS"/areas/t/tolkien' in script
+    assert "--out /data/out/atlas/areas/t/tolkien/tolkien-10-1009-641" in script
+    assert script.count("argus-atlas labels --job /data/out/atlas/areas/t/antique/") == 7
