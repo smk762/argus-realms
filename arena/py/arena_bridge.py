@@ -8,6 +8,9 @@ Seeding: the session's battle secret is its game seed (32 bytes, random unless t
 the news desk already derive their randomness from it, so a seed plus the same orders at the same ticks replays the
 game. The shared world's drand beacon is not used here.
 
+Regions: the arena offers several maps (`regions.json`: an id, a title, the world manifest, the land outline and the
+spawn points of each). A new game picks one; the session remembers it, and a restored save says which it is.
+
 Saving: `save()` returns the session as a compressed, versioned blob for the client's localStorage, `restore()`
 reads one back. A blob from another build of the rules is refused (409) rather than loaded into changed dataclasses.
 """
@@ -21,6 +24,7 @@ import sys
 import threading
 import types
 import zlib
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -50,11 +54,36 @@ _stub_db_driver()
 
 from pydantic import ValidationError  # noqa: E402
 
-from atlas_realms.protocol import SPAWNS, Control, Looks, NewSolo, OrderIn, check_new, meta  # noqa: E402
+from atlas_realms.protocol import Control, Looks, NewSolo, OrderIn, check_new, meta  # noqa: E402
 from atlas_realms.solo import Session, build_world  # noqa: E402
 
 SID = "local"
-SAVE_VERSION = 2  # 2: the open strait (all-sea chunks in the block are playable); older saves are refused
+# 2: the open strait (all-sea chunks in the block are playable); 3: regions (the session records its map).
+# Older saves are refused.
+SAVE_VERSION = 3
+
+
+@dataclass(frozen=True)
+class Region:
+    id: str
+    title: str
+    manifest: dict
+    outline: Path
+    spawns: tuple[tuple[float, float], ...]
+
+    def summary(self) -> dict:
+        return {"id": self.id, "title": self.title}
+
+
+def load_regions(index: Path, root: Path) -> list[Region]:
+    """The regions listed in `index` (arena/regions.json, or the build's copy in the zip): [{id, title, manifest,
+    outline, spawns}], the paths relative to `root`. The first is the default."""
+    out = []
+    for r in json.loads(index.read_text())["regions"]:
+        manifest = json.loads((root / r["manifest"]).read_text())
+        spawns = tuple((float(lat), float(lng)) for lat, lng in r["spawns"])
+        out.append(Region(r["id"], r["title"], manifest, root / r["outline"], spawns))
+    return out
 
 
 class HttpError(Exception):
@@ -77,9 +106,11 @@ def rules_build() -> str:
 
 
 class Arena:
-    def __init__(self, manifest: dict, outline: Path):
-        self.manifest = manifest
-        self.outline = Path(outline)
+    def __init__(self, regions: list[Region]):
+        if not regions:
+            raise ValueError("no regions")
+        self.regions = {r.id: r for r in regions}
+        self.default = regions[0].id
         self.session: Session | None = None
         self.build = rules_build()
 
@@ -96,8 +127,10 @@ class Arena:
             raise HttpError(422, e.errors(include_url=False)[0]["msg"]) from e
 
     def _route(self, method: str, path: list[str], query: dict, body: dict, now: float) -> dict:
+        if path == ["api", "regions"]:
+            return {"default": self.default, "regions": [r.summary() for r in self.regions.values()]}
         if path == ["api", "manifest"]:
-            return self.manifest
+            return self._region(query.get("region") or (self.session.region if self.session else None)).manifest
         if path == ["api", "meta"]:
             return meta()
         if path == ["api", "solo"] and method == "POST":
@@ -141,6 +174,12 @@ class Arena:
             return {"shield": lk.shield}
         raise HttpError(404, "not found")
 
+    def _region(self, rid: str | None) -> Region:
+        r = self.regions.get(rid or self.default)
+        if r is None:
+            raise HttpError(422, f"unknown region {rid!r}")
+        return r
+
     def _get(self, sid: str) -> Session:
         if sid != SID or self.session is None:
             raise HttpError(404, "no such session")
@@ -155,13 +194,21 @@ class Arena:
             secret = bytes.fromhex(seed) if seed else os.urandom(32)
         except ValueError as e:
             raise HttpError(422, str(e)) from e
-        world = build_world(self.manifest, self.outline, SPAWNS)
+        region = self._region(req.region)
+        world = build_world(region.manifest, region.outline, list(region.spawns))
         s = Session.new(
-            world, req.name, req.unit_class, tuple(req.bots), req.subscriber, tick_every=req.tick_every, secret=secret
+            world,
+            req.name,
+            req.unit_class,
+            tuple(req.bots),
+            req.subscriber,
+            tick_every=req.tick_every,
+            secret=secret,
+            region=region.id,
         )
         s._last = now
         self.session = s
-        return {"id": SID, "seed": secret.hex()}
+        return {"id": SID, "seed": secret.hex(), "region": region.id}
 
     # -- saving ---------------------------------------------------------------------------------
 
@@ -181,6 +228,8 @@ class Arena:
             raise HttpError(422, "unreadable save") from e
         if data.get("v") != SAVE_VERSION or data.get("build") != self.build:
             raise HttpError(409, "saved by another version of the game")
+        if data["session"].get("region") not in self.regions:
+            raise HttpError(409, "saved on a map this build doesn't have")
         s = Session.__new__(Session)
         vars(s).update(data["session"])
         s.lock = threading.Lock()
@@ -190,7 +239,7 @@ class Arena:
         elif away == "shield":
             s.submit("shield", {"on": True})
         self.session = s
-        return {"id": SID, "seed": s.secret.hex(), "tick": s.world.tick}
+        return {"id": SID, "seed": s.secret.hex(), "tick": s.world.tick, "region": s.region}
 
     # -- the worker's entry point ---------------------------------------------------------------
 

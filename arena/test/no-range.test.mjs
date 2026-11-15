@@ -26,14 +26,19 @@ test("runtime code needs no range requests", () => {
   assert.ok(!("pmtiles" in { ...pkg.dependencies, ...pkg.devDependencies }), "package.json still pulls in pmtiles");
 });
 
-test("a built dist fits Pages and serves tiles as plain files", { skip: !existsSync(join(arena, "dist", "manifest.json")) }, () => {
+test("a built dist fits Pages and serves tiles as plain files", { skip: !existsSync(join(arena, "dist", "regions.json")) }, () => {
   const all = files(join(arena, "dist"));
   assert.ok(all.length < 20_000, `${all.length} files: Pages allows fewer than 20,000`);
   for (const f of all) {
     assert.ok(statSync(f).size <= 25 * 2 ** 20, `${relative(arena, f)} is over Pages' 25 MiB per file`);
     assert.ok(!f.endsWith(".pmtiles"), `${relative(arena, f)} would need range requests`);
   }
-  const manifest = JSON.parse(readFileSync(join(arena, "dist", "manifest.json"), "utf8"));
-  assert.match(manifest.tile_url, /^tiles\/\{style\}\/\{z\}\/\{x\}\/\{y\}\.webp$/);
-  assert.ok(!("pmtiles_url" in manifest));
+  const index = JSON.parse(readFileSync(join(arena, "dist", "regions.json"), "utf8"));
+  assert.ok(index.regions.length > 0);
+  for (const r of index.regions) {
+    const manifest = JSON.parse(readFileSync(join(arena, "dist", r.manifest), "utf8"));
+    const tiles = new RegExp(`^tiles/${r.id}/\\{style\\}/\\{z\\}/\\{x\\}/\\{y\\}\\.webp$`);
+    assert.match(manifest.tile_url, tiles);
+    assert.ok(!("pmtiles_url" in manifest));
+  }
 });

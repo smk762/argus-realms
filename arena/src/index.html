@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Realms: solo arena</title>
-  <meta name="description" content="Realms, the argus-atlas minigame: you against eight bots on a painted map of Cook Strait, New Zealand. Runs entirely in your browser.">
+  <meta name="description" content="Realms, the argus-atlas minigame: you against eight bots on a painted map: Cook Strait, Iceland and more. Runs entirely in your browser.">
   <meta name="color-scheme" content="dark">
   <!-- The argus-atlas favicon set (copied from site/ at build time), unchanged. -->
   <link rel="icon" href="favicon.ico" sizes="any">
@@ -50,7 +50,7 @@
         <button type="button" id="options-toggle" class="m-only" aria-expanded="false" aria-controls="options">Game</button>
       </div>
       <section id="options" class="buttons">
-        <label>Map <select id="style"></select></label>
+        <label>Theme <select id="style"></select></label>
         <label>Speed <select id="speed">
           <option value="4">0.25×</option><option value="2">0.5×</option><option value="1">1×</option>
           <option value="0.5">2×</option><option value="0.25">4×</option>
@@ -128,7 +128,7 @@
 
   <!-- Shown until the rules engine is ready; the map loads behind it. -->
   <section id="loader" aria-labelledby="loader-title">
-    <h2 id="loader-title">Realms <span>· Cook Strait</span></h2>
+    <h2 id="loader-title">Realms <span id="region-title"></span></h2>
     <div id="loader-bar" role="progressbar" aria-labelledby="loading" aria-valuemin="0" aria-valuemax="100"><span></span></div>
     <p id="loading" role="status">Loading the game…</p>
     <!-- Not a live region: the quotes change every few seconds and are not announced. -->
@@ -137,15 +137,16 @@
       <figure class="quote" aria-hidden="true"><blockquote></blockquote><figcaption></figcaption></figure>
     </div>
   </section>
-  <p id="placeholder" hidden>Placeholder basemap: the painted Cook Strait tiles aren't in this build.</p>
+  <p id="placeholder" hidden>Placeholder basemap: this map's painted tiles aren't in this build.</p>
   <div id="ctx" hidden></div>
   <div id="toast" hidden></div>
 
   <dialog id="start">
     <form method="dialog" id="start-form">
       <h1>Realms</h1>
-      <p>Solo arena: you against bots around Cook Strait. Each bot has its own personality and class.
+      <p>Solo arena: you against bots on a painted map. Each bot has its own personality and class.
         It all runs in your browser and saves here; nothing is sent anywhere.</p>
+      <label>Map <select name="region" id="start-region"></select></label>
       <label>Name <input name="name" value="You" maxlength="24" required></label>
       <label>Class <select name="unit_class" id="start-class"></select></label>
       <p id="class-blurb" class="small"></p>

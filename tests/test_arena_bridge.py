@@ -10,18 +10,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "arena" / "py"))
 
-from arena_bridge import Arena, HttpError  # noqa: E402
+from arena_bridge import Arena, HttpError, load_regions  # noqa: E402
 
-MANIFEST = json.loads((ROOT / "arena" / "world" / "cook-strait.json").read_text())
-OUTLINE = ROOT / "data" / "nz_mainland.geojson"
+REGIONS = load_regions(ROOT / "arena" / "regions.json", ROOT)
 SEED = "ab" * 32
 
 
 @pytest.fixture
 def arena():
-    a = Arena(MANIFEST, OUTLINE)
+    a = Arena(REGIONS)
     r = a.call("POST", "/api/solo", {"name": "t", "unit_class": "tank", "tick_every": 0.25, "seed": SEED}, now=100.0)
-    assert r == {"id": "local", "seed": SEED}
+    assert r == {"id": "local", "seed": SEED, "region": "cook-strait"}
     return a
 
 
@@ -47,6 +46,8 @@ def test_routes_like_the_server(arena):
         ("POST", "/api/solo/local/looks", {"shield": "gold"}, 403),
         ("POST", "/api/solo/local/control", {"tick_every": 0.01}, 422),
         ("POST", "/api/solo", {"unit_class": "wizard"}, 422),
+        ("POST", "/api/solo", {"region": "atlantis"}, 422),
+        ("GET", "/api/manifest?region=atlantis", None, 422),
     ],
 )
 def test_errors(arena, method, url, body, status):
@@ -57,7 +58,7 @@ def test_errors(arena, method, url, body, status):
 
 def test_same_seed_same_game():
     def play() -> dict:
-        a = Arena(MANIFEST, OUTLINE)
+        a = Arena(REGIONS)
         a.call("POST", "/api/solo", {"tick_every": 0.25, "seed": SEED}, now=0.0)
         return a.call("GET", "/api/solo/local/state", now=20.0)  # 120 ticks
 
@@ -67,18 +68,18 @@ def test_same_seed_same_game():
 def test_save_restore(arena):
     saved_at = arena.call("GET", "/api/solo/local/state", now=110.0)["tick"]
     blob = arena.save()
-    b = Arena(MANIFEST, OUTLINE)
+    b = Arena(REGIONS)
     assert b.restore(blob, now=110.0)["seed"] == SEED
     assert b.call("GET", "/api/solo/local/state", now=120.0) == arena.call("GET", "/api/solo/local/state", now=120.0)
     # "When away: pause" keeps the closed time out of the game.
-    c = Arena(MANIFEST, OUTLINE)
+    c = Arena(REGIONS)
     c.restore(blob, now=900.0, away="pause")
     assert c.call("GET", "/api/solo/local/state", now=900.0)["tick"] == saved_at
 
 
 def test_save_from_another_build_is_refused(arena):
     blob = arena.save()
-    b = Arena(MANIFEST, OUTLINE)
+    b = Arena(REGIONS)
     b.build = "something-else"
     with pytest.raises(HttpError) as e:
         b.restore(blob, now=0.0)
@@ -91,3 +92,27 @@ def test_handle_is_json(arena):
     r = json.loads(arena.handle(json.dumps({"op": "call", "method": "GET", "url": "/api/solo/x/state", "now": 0})))
     assert r == {"status": 404, "body": {"detail": "no such session"}}
     assert json.loads(arena.handle(json.dumps({"op": "save"})))["status"] == 200
+
+
+def test_regions_are_listed_and_a_game_keeps_its_region():
+    a = Arena(REGIONS)
+    listed = a.call("GET", "/api/regions")
+    assert listed["default"] == "cook-strait"
+    assert [r["id"] for r in listed["regions"]] == [r.id for r in REGIONS]
+    assert a.call("GET", "/api/manifest?region=iceland")["chunk_zoom"] == 7
+    r = a.call("POST", "/api/solo", {"tick_every": 0.25, "seed": SEED, "region": "iceland"}, now=0.0)
+    assert r["region"] == "iceland"
+    assert a.call("GET", "/api/manifest")["chunk_zoom"] == 7  # the session's own map
+    zones = [f["properties"]["zone"] for f in a.call("GET", "/api/solo/local/hexes")["features"]]
+    assert zones.count("spawn") == 2 and zones.count("land") > 400
+    a.call("GET", "/api/solo/local/state", now=5.0)
+    b = Arena(REGIONS)
+    assert b.restore(a.save(), now=5.0)["region"] == "iceland"
+
+
+def test_a_save_from_a_missing_region_is_refused():
+    a = Arena(REGIONS)
+    a.call("POST", "/api/solo", {"seed": SEED, "region": "iceland"}, now=0.0)
+    with pytest.raises(HttpError) as e:
+        Arena([r for r in REGIONS if r.id != "iceland"]).restore(a.save(), now=0.0)
+    assert e.value.status == 409

@@ -17,6 +17,7 @@ import h3
 from atlas_realms.bots import PERSONALITIES, Bot, decide
 from atlas_realms.fog import fog_geojson
 from atlas_realms.news import digest, events_of
+from atlas_realms.rules.chunks import at_zoom
 from atlas_realms.rules.classes import CLASSES
 from atlas_realms.rules.tunables import DEFAULT, Tunables
 from atlas_realms.seed import land_cells, plan_hexes, sea_chunks
@@ -51,8 +52,9 @@ DEFAULT_ROSTER = ("settler", "raider", "warden", "corsair", "sapper", "jackal", 
 
 def build_world(manifest: dict, outline: Path, spawns: list[tuple[float, float]], t: Tunables = DEFAULT) -> World:
     """The solo world: the baked chunks plus the open sea inside the painted block (`sea_chunks`), which needs no
-    painting, so a strait between baked coasts is open water to play on rather than fog."""
-    baked = {tuple(c) for c in manifest["ready_chunks"]}
+    painting, so a strait between baked coasts is open water to play on rather than fog. Chunks baked at another zoom
+    (Iceland's z7) are mapped onto the game's chunk zoom first."""
+    baked = at_zoom(manifest["ready_chunks"], t.chunk_zoom)
     ready = baked | sea_chunks(baked, outline, t.chunk_zoom)
     rows = plan_hexes(ready, land_cells(outline, t.h3_resolution), spawns, t)
     hexes = {
@@ -71,6 +73,7 @@ class Session:
     tick_every: float = 2.0  # the speed setting: nominal wall seconds per game tick (the real period is / PACE)
     paused: bool = False
     t: Tunables = SOLO
+    region: str = ""  # which map (the arena's regions.json id); the server's solo mode has only Cook Strait
     battles: list[tuple[int, BattleRecord]] = field(default_factory=list)  # (tick, record), newest last
     results: dict[int, str] = field(default_factory=dict)  # the human's order id -> result
     history: list[tuple[int, BattleRecord]] = field(default_factory=list)  # the human's own battles, newest last

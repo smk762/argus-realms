@@ -5,7 +5,7 @@ This repo produces two static sites on Cloudflare Pages:
 | Site | Source | Pages project | Domain |
 |---|---|---|---|
 | Atlas, the map demo | `site/` + `var/tiles-areas/` | `atlas-realms` | atlas.dragonhound.dev |
-| Realms, the solo arena in the browser | `arena/` + `var/tiles/` | `argus-realms` | realms.dragonhound.dev |
+| Realms, the solo arena in the browser | `arena/` + each region's tiles (`arena/regions.json`) | `argus-realms` | realms.dragonhound.dev |
 
 The production branch of both projects is `main`. A deploy with any other `--branch` is a preview.
 
@@ -47,6 +47,12 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 4. `make sea-masks` remakes `data/masks/` from the OpenFreeMap ocean, so painted sea only shows near the coast.
 5. Choose neutral, well-known places: islands, straits, mountain ranges. Don't put demo data anywhere that ties the project to a person.
 
+**Adding a region to the Realms arena** (the same bakes serve both):
+1. Make its outline with `scripts/land_outline.py` (see `data/README.md`). Check `bakeplan --land` reports about 50 or more land hexes at res 5; smaller islands don't make a game.
+2. Bake it with `--area`, then export it as for Atlas, into `var/tiles-areas/<area>`.
+3. Commit `arena/world/<area>.json` (the export's `manifest.json`: styles, ready chunks, zooms, bounds) and add the region to `arena/regions.json`, with two spawn points on land.
+4. `make arena-test` checks that it plays the same in Pyodide and CPython; `make arena` paints it.
+
 ## 5. Build and deploy
 
 **Credentials:** Wrangler reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment. Keep them in a file outside the repo, mode 600, and load it with `set -a; . <file>; set +a`. Never commit them or print them in logs.
@@ -59,7 +65,7 @@ npx wrangler@4 pages deploy dist/static --project-name=atlas-realms --branch=mai
 
 **Realms arena:**
 ```bash
-make arena TILES=var/tiles
+make arena                           # paints every region in arena/regions.json whose tiles are here
 npx wrangler@4 pages deploy arena/dist --project-name=argus-realms --branch=main
 ```
 

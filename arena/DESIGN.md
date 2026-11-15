@@ -6,7 +6,7 @@ stay as they are; PvP on the shared Postgres world will still need a server late
 
 ## Scope
 
-In: the **solo arena** only. You against up to eight bots around Cook Strait, the same rules, bots, bounties,
+In: the **solo arena** only. You against up to eight bots on one of several maps (see "Regions"), the same rules, bots, bounties,
 veterancy, shields, contracts, nemesis preview, news desk and patron-perk preview as `make preview`.
 
 Out: accounts, PvP, the shared world (Postgres, drand beacon, tick runner), baking (the fog never lifts past the baked
@@ -138,8 +138,8 @@ matters, and it is 10× smaller.
 - The painted tiles have no text in them (this export has no `labels.geojson`). Place names come from the basemap,
   under the fog, so label legibility doesn't depend on the tile encoding.
 
-How it is served: **plain XYZ folders, one WebP file per tile** (`tiles/<style>/<z>/<x>/<y>.webp`).
-- `build.py --tiles var/tiles` paints in the open sea (`sea_fill.py`) and re-encodes every tile (`tiles_webp.py`). The
+How it is served: **plain XYZ folders, one WebP file per tile** (`tiles/<region>/<style>/<z>/<x>/<y>.webp`).
+- `build.py --tiles` paints in the open sea (`sea_fill.py`) and re-encodes every tile (`tiles_webp.py`). The
   result is cached in `arena/.cache/tiles`, keyed on the source tiles and the fill version.
 - MapLibre reads them with a plain raster source: a `tiles` URL template, with the same minzoom, maxzoom and bounds as
   before.
@@ -169,6 +169,29 @@ Licensing: the painted tiles are ODbL Produced Works from OpenStreetMap data plu
 shows the manifest's attribution ("Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap
 contributors") and the basemap's OpenFreeMap / OpenMapTiles / OpenStreetMap links.
 
+## Regions
+
+The arena offers several maps. `arena/regions.json` lists them (the first is the default): an id, a title, the world
+manifest (`arena/world/<id>.json`: which chunks are painted, at what zooms), the land outline (`data/`), two spawn points
+and the tile export the build paints from (not in git).
+
+- **Build:** per region a manifest (`regions/<id>.json`), a mist (`fog-<id>.webp`) and tiles under `tiles/<id>/`; an
+  index (`regions.json`) for the page. The zip carries the committed world manifests and outlines, so the browser and
+  the CPython reference build the same worlds. A region whose tiles aren't on the build machine gets the placeholder
+  basemap; the others are still painted.
+- **Game:** a new game names its region (`NewSolo.region`); the session records it, and `restore` says which it was.
+  Save version 3; a save from a region the build no longer has is refused (409).
+- **Client:** the start dialog has a map picker, and the map behind it follows the choice. The theme carries over
+  where the region has it. Zoom limits follow the region's bake (`minzoom`, `chunk_zoom`, `maxzoom`), at least z10.
+- **Chunk zoom:** the game's chunks are z10. Iceland reuses Atlas's bake, painted in z7 chunks (native to z9), so
+  `rules.chunks.at_zoom` maps each onto its 64 z10 chunks; finer chunks would count once all four children are ready.
+- **Size:** a region needs about 50+ land hexes at H3 res 5 (Cook Strait: 50 claimable + 2 spawns). Réunion and
+  Tenerife–Gran Canaria have 10–14, so they aren't offered. Iceland has 461.
+- **Tick cost:** the tick used to deepcopy the world, which was 95% of a tick on Iceland (~1,650 hexes). It now
+  copies only what can change (`World.snapshot()`): Cook Strait 6.0 → 3.9 ms, Iceland 34.9 → 9.1 ms per tick (CPython).
+- **Parity:** `parity.test.mjs` plays every region (Cook Strait 400 ticks, the others 100).
+- **Measured:** Cook Strait (2 themes) + Iceland (7 themes): 5,172 files, 50.8 MiB; Iceland's tiles 19.8 MiB.
+
 ## Fog and sea: no basemap showing
 
 The painted block is 7 × 7 chunks, but only 30 were baked. The other 19 were skipped by the bake plan because they hold
@@ -176,7 +199,7 @@ no land (its test: no `data/nz_mainland.geojson` land cell touches the chunk). T
 basemap under everything, so grey showed around the block and in the sea gaps between the painted rectangles. Painted
 builds now draw no basemap at all.
 
-- **Outside the block: fog.** `sea_fog.py` writes `fog.webp`, a dark mist (the game fog's `#0d0f13` with soft lighter
+- **Outside the block: fog.** `sea_fog.py` writes `fog-<region>.webp`, a dark mist (the game fog's `#0d0f13` with soft lighter
   wisps) laid out in Web Mercator over the block plus a 30% margin.
   - It is opaque outside the block and fades to clear about one hex (17 km) inside its edge.
   - MapLibre draws it as an image layer above the painting.
@@ -277,7 +300,7 @@ theme. It fades out (or is simply hidden, under reduced motion) once the game is
 inline script, and here no inline style either (the page links the vendored stylesheets). The CSP adds
 `'wasm-unsafe-eval'` (WebAssembly compilation only, no JS `eval`) and `worker-src 'self' blob:` (the game worker and
 MapLibre's). The play-test checks there are no CSP violations. Pyodide, the wheels and the Python zip (content-hashed
-name) are served `immutable`; the page, `arena.json` and `manifest.json` are `no-cache`.
+name) are served `immutable`; the page, `arena.json`, `regions.json` and `regions/*` are `no-cache`.
 
 The Dragonhound shared layer is copied from `site/vendor/dh` at build time (one vendored copy in git, pinned by
 `.dh-shared.json`); `<html data-dh-site="realms">` marks Realms current, and the build fails if the pasted strip drifts.

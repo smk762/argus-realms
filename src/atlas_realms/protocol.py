@@ -20,6 +20,7 @@ class NewSolo(BaseModel):
     bots: list[str] = list(DEFAULT_ROSTER)
     tick_every: float = Field(2.0, ge=0.25, le=60)
     subscriber: bool = False
+    region: str | None = None  # the browser arena's map (regions.json); None = its default
 
 
 class Looks(BaseModel):

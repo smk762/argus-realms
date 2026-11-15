@@ -1,0 +1,134 @@
+{
+ "_comment": "Iceland (bakes/islands.sh, argus-atlas 0.3.0, z7 chunks painted to z9), as atlas_realms.tiles exported it for Atlas: which chunks are painted. The game maps them onto its z10 chunks (rules.chunks.at_zoom). The tiles are not in git.",
+ "styles": [
+  {
+   "name": "antique",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "cyberpunk",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "imhof",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "minecraft",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "pixel",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "tolkien",
+   "patron_only": false,
+   "chunks": 16
+  },
+  {
+   "name": "watercolor",
+   "patron_only": false,
+   "chunks": 16
+  }
+ ],
+ "ready_chunks": [
+  [
+   7,
+   55,
+   32
+  ],
+  [
+   7,
+   55,
+   33
+  ],
+  [
+   7,
+   55,
+   34
+  ],
+  [
+   7,
+   56,
+   32
+  ],
+  [
+   7,
+   56,
+   33
+  ],
+  [
+   7,
+   56,
+   34
+  ],
+  [
+   7,
+   57,
+   31
+  ],
+  [
+   7,
+   57,
+   32
+  ],
+  [
+   7,
+   57,
+   33
+  ],
+  [
+   7,
+   57,
+   34
+  ],
+  [
+   7,
+   58,
+   31
+  ],
+  [
+   7,
+   58,
+   32
+  ],
+  [
+   7,
+   58,
+   33
+  ],
+  [
+   7,
+   58,
+   34
+  ],
+  [
+   7,
+   59,
+   32
+  ],
+  [
+   7,
+   59,
+   33
+  ]
+ ],
+ "minzoom": 6,
+ "chunk_zoom": 7,
+ "maxzoom": 9,
+ "bounds": [
+  -25.3125,
+  62.915233,
+  -11.2499999,
+  67.6092206
+ ],
+ "tile_url": "tiles/{style}/{z}/{x}/{y}.png",
+ "labels_url": "tiles/labels.geojson",
+ "attribution": "Map painted by argus-atlas from Copernicus GLO-30 and \u00a9 OpenStreetMap contributors"
+}

@@ -92,9 +92,9 @@ async function boot() {
 import json, sys
 from pathlib import Path
 sys.path.insert(0, "/home/pyodide/realms")
-from arena_bridge import Arena
+from arena_bridge import Arena, load_regions
 _root = Path("/home/pyodide/realms/data")
-arena = Arena(json.loads((_root / "manifest.json").read_text()), _root / "nz_mainland.geojson")
+arena = Arena(load_regions(_root / "regions.json", _root))
 `);
   handle = py.globals.get("arena").handle;
   postMessage({ ready: true, ms: Math.round(performance.now() - t0) });

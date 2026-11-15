@@ -44,7 +44,6 @@ Open questions decided here for now, each easy to change:
 - walking fees (l_walk) are charged per hex entered, clipped to what the player has.
 """
 
-import copy
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -91,10 +90,10 @@ class TickOutput:
 
 
 class _Tick:
-    """Working state for one tick. Steps mutate `w`; the caller's world is a deep copy."""
+    """Working state for one tick. Steps mutate `w`; the caller's world is a deep copy (`World.snapshot`)."""
 
     def __init__(self, world: World, secret: bytes, t: Tunables, beacon: bytes | None = None) -> None:
-        self.w = copy.deepcopy(world)
+        self.w = world.snapshot()
         self.w.tick += 1
         self.tick = self.w.tick
         self.secret = secret
