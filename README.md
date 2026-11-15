@@ -2,12 +2,12 @@
 
 <!-- Live demo: https://atlas.dragonhound.dev -->
 
-Real islands painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. The hosted demo is **Atlas**, at **[atlas.dragonhound.dev](https://atlas.dragonhound.dev)**. realms.dragonhound.dev is reserved for the Realms minigame; until the game is hosted it redirects to Atlas.
+Real islands painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. There are two hosted demos. **Atlas**, at **[atlas.dragonhound.dev](https://atlas.dragonhound.dev)**, shows the painted maps. **Realms**, at **[realms.dragonhound.dev](https://realms.dragonhound.dev)**, is the solo arena of the minigame, running in your browser.
 
 The repo holds two things:
 
 - **Atlas, the map demo** (`site/`), a fully static page served at atlas.dragonhound.dev. Iceland and Réunion are each painted in all seven argus-atlas styles (antique, tolkien, imhof, watercolor, cyberpunk, minecraft, pixel), with OpenStreetMap place names on top. An opacity slider fades the painting into the basemap, which shows that the coastlines stay put.
-- **Realms, the minigame** (`src/atlas_realms/`, `web/`), a work-in-progress territory game played on the same painted maps. It needs its own server and isn't hosted yet; it will live at realms.dragonhound.dev. See [The minigame](#the-minigame).
+- **Realms, the minigame** (`src/atlas_realms/`, `web/`), a work-in-progress territory game played on the same painted maps. The solo arena runs fully in the browser at realms.dragonhound.dev. The shared world needs its own server and isn't hosted yet. See [The minigame](#the-minigame).
 
 ## What the demo shows
 
@@ -52,6 +52,8 @@ npx wrangler pages deploy dist/static --project-name=<your project>
 ```
 
 `_headers` (CSP, caching, CORS on `/tiles/*`) is in Cloudflare Pages and Netlify format. On other hosts, set the same headers in the server config.
+
+[docs/deploy.md](docs/deploy.md) covers the rest: setting up a new machine, the data that isn't in git, baking new areas and styles on the GPU host, the production deploys of both sites, and the Cloudflare Pages limits.
 
 ## The minigame
 
