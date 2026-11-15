@@ -174,14 +174,42 @@ builds now draw no basemap at all.
   - The texture switches with the map style.
   - Limitations: the texture is a fixed screen-pixel pattern, so its grain doesn't scale with zoom the way the painting
     does; and a faint edge can show where a painted chunk meets the texture.
-- **In play:** hexes that touch an unbaked chunk aren't playable (the existing rule), so the middle of the strait sits
-  under the game's own fog once a game starts. The painted sea shows there faintly, through the fog.
-  - Counting all-sea chunks as "ready" would open the strait to play. That is a rules change for the user to decide
-    (`World.ready_chunks` / `plan_hexes`).
+- **In play: the strait is open water.** `seed.sea_chunks()` is in the Python rules, so the server and the browser agree.
+  - Inside the bounding box of the baked chunks, a chunk with no land counts as ready. "No land" is the bake plan's own
+    test: no res-7 land cell touches the chunk. Open sea needs no painting.
+  - `solo.build_world` adds these chunks, so their hexes are playable water. For Cook Strait that is exactly the bake
+    plan's 19 skipped chunks, and 80 playable water hexes instead of 16.
+  - A land chunk whose bake hasn't finished never counts as sea.
+  - The rules already treat water as crossing-only: it has a movement cost (marines are fast on it), and nobody can
+    claim it or fight on it.
+  - Bot behaviour, checked over 1,500 ticks with three seeds against the closed strait: unchanged. No water hex is ever
+    owned. The narrows were already baked, so routes across existed before.
+  - The DB seed for the shared world is unchanged; PvP will need the same rule.
+  - Saves from before this (save version 1) are refused.
 - **Place names:** town and city names (OpenFreeMap `place` layer, city and town only, from z8) are drawn on the
   painting in the parchment style, inside the block only and under the fog.
 - **Placeholder build (no tiles):** keeps the OpenFreeMap basemap and says so, with the same mist and pan limits
   outside the block.
+
+## Phones
+
+At 640 px wide or less, and on landscape phones (height 500 px or less), the map gets the screen.
+- **Top:** under the shared strip sits a slim title bar with the clock and two toggles, Players and Game. Nothing ever
+  covers it.
+- **Players toggle:** the side panel (players, cities, battles, rivals) opens as a bottom sheet. It is closed by
+  default, with a ✕ to close it; Escape or a tap on the map closes it too.
+- **Game toggle:** the map, speed, away, pause and new-game options open as a menu.
+- **Bottom bar:** one row of 44 px actions (Walk, March, Heal, Stop, Shield, ⋯). "⋯" adds a row with the shield
+  options and the class swap. The credits fold into ⓘ, as on Atlas.
+- **Zoom:** the zoom buttons are hidden on phones, where pinch and double-tap zoom work.
+- **Desktop:** unchanged.
+
+`test/mobile.mjs` checks 390 × 844, 320 × 568 and 844 × 390, plus desktop:
+- no sideways scroll;
+- the title bar is never covered, even with the sheet open;
+- every visible control is at least 44 px;
+- a tap on the map moves your unit;
+- the sheet, menu, "⋯" and ⓘ each open and close.
 
 ## Loading
 

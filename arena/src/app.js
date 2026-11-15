@@ -1192,11 +1192,32 @@ function wirePanel() {
   $("pause").onclick = () => { autoPaused = false; setPaused(!(lastState && lastState.paused)); };
   $("quit").onclick = () => { store.del("solo"); store.del(SAVE_KEY); location.reload(); };
   wireAway();
+  wirePhone();
   addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
   addEventListener("pointerdown", (e) => { if (!$("ctx").contains(e.target)) closeMenu(); }, true);
   wireShieldOptions();
   wireNemesis();
   $("news").onclick = () => lastState && showReport(Math.max(0, lastState.tick - 360), "The last six hours");
+}
+
+// -- phones ------------------------------------------------------------------------------------------
+// Below 640 px (and on landscape phones) style.css turns the side panel into a bottom sheet and folds the options,
+// the extra actions and the credits behind toggles. Each toggle flips a class on #panel and its aria-expanded.
+
+function wirePhone() {
+  const panel = $("panel");
+  const toggles = { sheet: "sheet-toggle", options: "options-toggle", more: "more-toggle", attr: "attr-toggle" };
+  const set = (name, open) => {
+    panel.classList.toggle(`${name}-open`, open);
+    $(toggles[name]).setAttribute("aria-expanded", String(open));
+  };
+  for (const [name, id] of Object.entries(toggles)) {
+    $(id).onclick = () => set(name, !panel.classList.contains(`${name}-open`));
+  }
+  $("sheet-close").onclick = () => { set("sheet", false); $("sheet-toggle").focus(); };
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && panel.classList.contains("sheet-open")) set("sheet", false); });
+  // A tap on the map means "back to the game": the sheet and menus get out of the way.
+  map.on("click", () => { for (const name of ["sheet", "options", "more"]) set(name, false); });
 }
 
 // -- when away ----------------------------------------------------------------------------------

@@ -238,3 +238,71 @@ fieldset label { justify-content: flex-start; font-size: 13px; }
   #loader-bar.busy::after { animation: none; }
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+
+/* -- phones (portrait up to 640 px, and landscape phones) ------------------------------------------
+   The map gets the screen. The title bar holds the clock plus two toggles: the side panel opens as a bottom sheet
+   (closed by default), and the game options fold into a menu. The action bar is one row of 44 px targets with the
+   rest behind "⋯", and the credits fold into ⓘ. Desktop is unchanged: .m-only is hidden above these sizes. */
+.m-only { display: none; }
+@media (max-width: 640px), (max-height: 500px) {
+  html, body { overflow: hidden; }
+  .maplibregl-ctrl-top-left { display: none; } /* pinch and double-tap zoom; the buttons would sit under the title */
+  #title {
+    left: 8px; right: 8px; top: calc(var(--dh-strip-h) + 6px); padding: 4px 6px 4px 12px; gap: 6px; z-index: 3;
+  }
+  .title-row { align-items: center; gap: 8px; }
+  .title-row h1 { flex: none; }
+  #clock { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-only { display: inline-flex; align-items: center; justify-content: center; }
+  #title button, #title select, #bar button, #bar select, .tabs button, #battle-views button,
+  #my-nemesis button, #my-nemesis select { min-height: 44px; min-width: 44px; }
+  #options { display: none; }
+  #panel.options-open #options { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 6px; }
+  #options label { flex: 1 1 40%; }
+  #options select { flex: 1; }
+
+  /* The side panel, as a bottom sheet over the action bar. */
+  #sidebar { display: none; }
+  #panel.sheet-open #sidebar {
+    display: flex; z-index: 6; left: 0; right: 0; top: auto; bottom: 0; width: auto;
+    max-height: min(70dvh, calc(100dvh - var(--dh-strip-h) - 70px)); border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45); padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg); /* opaque: the action bar is underneath */
+  }
+  #panel.sheet-open .pane { min-height: 40dvh; }
+  .tabs button { padding: 0 6px; }
+  #sheet-close { flex: none; width: 48px; font-size: var(--dh-text-base); }
+
+  /* The action bar: who you are on one line, the actions on the next. */
+  #bar {
+    left: 0; right: 0; bottom: 0; min-height: 0; border-radius: 12px 12px 0 0; gap: 6px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+  .bar-row { flex-direction: column; align-items: stretch; gap: 6px; flex-wrap: nowrap; }
+  #me { width: auto; flex-direction: row; align-items: center; gap: 8px; }
+  #me .row { flex: 0 1 auto; min-width: 0; gap: 6px; }
+  #me-coins { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #me .hp { flex: 1 0 72px; }
+  #bar button { align-items: center; justify-content: center; } /* for the ones shown as inline-flex */
+  #me-status { display: none; }
+  #me-coins { margin-left: 0; }
+  #attr-toggle { border: 0; background: none; color: var(--quiet); font-size: var(--dh-text-lg); padding: 0; }
+  /* One row of six (Walk, March, Heal, Stop, Shield, ⋯); "⋯" adds a second row (shield options, class swap). The
+     buttons' wrapper steps aside (display: contents) so they and the overflow share one wrapping flex row, and the
+     separator becomes the line break. */
+  #orders { flex-wrap: wrap; gap: 6px 4px; }
+  #modes { display: contents; }
+  #modes button { flex: 1 1 0; min-width: 44px; padding: 0 2px; order: 0; }
+  #orders .sep, #shield-opts, #swap, #swap-go { display: none; }
+  #panel.more-open .sep { display: block; flex-basis: 100%; height: 0; margin: 0; order: 1; }
+  #panel.more-open #shield-opts { display: inline-flex; flex: 0 0 48px; order: 2; }
+  #panel.more-open #swap { display: inline-flex; flex: 1; order: 3; }
+  #panel.more-open #swap-go { display: inline-flex; flex: none; order: 4; }
+  #attribution { display: none; }
+  #panel.attr-open #attribution { display: block; text-align: left; }
+  #toast { bottom: 120px; max-width: calc(100vw - 32px); box-sizing: border-box; }
+  #placeholder { left: 8px; right: 8px; top: calc(var(--dh-strip-h) + 64px); max-width: none; }
+}
+@media (max-width: 380px) {
+  .title-row h1 { display: none; } /* the clock and the toggles need the room */
+}

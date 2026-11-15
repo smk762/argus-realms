@@ -39,7 +39,11 @@
 
   <div id="panel" hidden>
     <div id="title">
-      <div class="title-row"><h1>Realms</h1><span id="clock"></span></div>
+      <div class="title-row"><h1>Realms</h1><span id="clock"></span>
+        <!-- Phones only (style.css): the side panel becomes a bottom sheet, and the game options fold into a menu. -->
+        <button type="button" id="sheet-toggle" class="m-only" aria-expanded="false" aria-controls="sidebar">Players</button>
+        <button type="button" id="options-toggle" class="m-only" aria-expanded="false" aria-controls="options">Game</button>
+      </div>
       <section id="options" class="buttons">
         <label>Map <select id="style"></select></label>
         <label>Speed <select id="speed">
@@ -54,12 +58,13 @@
       </section>
     </div>
 
-    <aside id="sidebar">
+    <aside id="sidebar" aria-label="Players, cities, battles and rivals">
       <nav class="tabs">
         <button data-tab="players" class="on">Players</button>
         <button data-tab="cities">Cities</button>
         <button data-tab="battles">Battles</button>
         <button data-tab="nemesis">Rivals</button>
+        <button type="button" id="sheet-close" class="m-only" aria-label="Close the panel">✕</button>
       </nav>
       <div class="pane" id="pane-players"><ul id="players"></ul></div>
       <div class="pane" id="pane-cities" hidden>
@@ -92,6 +97,8 @@
         <section id="me">
           <div class="row">
             <strong id="me-name"></strong><span id="me-class" class="tag"></span><span id="me-coins" class="small"></span>
+            <button type="button" id="attr-toggle" class="m-only" aria-expanded="false" aria-controls="attribution"
+              aria-label="Map credits">ⓘ</button>
           </div>
           <div class="hp"><div id="me-hp-bar"></div><span id="me-hp"></span></div>
           <div id="me-status" class="small"></div>
@@ -103,6 +110,7 @@
             <button data-mode="heal">Heal</button>
             <button id="stop">Stop</button>
             <button id="shield">Shield</button><button id="shield-opts" title="Shield options">⚙</button>
+            <button type="button" id="more-toggle" class="m-only" aria-expanded="false" aria-label="More actions">⋯</button>
           </span>
           <span class="sep"></span>
           <select id="swap"></select>
