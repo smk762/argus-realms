@@ -70,6 +70,7 @@ class Region:
     manifest: dict
     outline: Path
     spawns: tuple[tuple[float, float], ...]
+    desk: dict | None = None  # the news desk's paper and place names (news.STRAIT's keys); None = Cook Strait's
 
     def summary(self) -> dict:
         return {"id": self.id, "title": self.title}
@@ -82,7 +83,7 @@ def load_regions(index: Path, root: Path) -> list[Region]:
     for r in json.loads(index.read_text())["regions"]:
         manifest = json.loads((root / r["manifest"]).read_text())
         spawns = tuple((float(lat), float(lng)) for lat, lng in r["spawns"])
-        out.append(Region(r["id"], r["title"], manifest, root / r["outline"], spawns))
+        out.append(Region(r["id"], r["title"], manifest, root / r["outline"], spawns, r.get("news")))
     return out
 
 
@@ -205,6 +206,7 @@ class Arena:
             tick_every=req.tick_every,
             secret=secret,
             region=region.id,
+            **({"desk": dict(region.desk)} if region.desk else {}),
         )
         s._last = now
         self.session = s

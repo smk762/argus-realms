@@ -106,6 +106,7 @@ def test_regions_are_listed_and_a_game_keeps_its_region():
     zones = [f["properties"]["zone"] for f in a.call("GET", "/api/solo/local/hexes")["features"]]
     assert zones.count("spawn") == 2 and zones.count("land") > 400
     a.call("GET", "/api/solo/local/state", now=5.0)
+    assert a.call("GET", "/api/solo/local/report?since=0", now=5.0)["paper"] == "The Saga Courier"
     b = Arena(REGIONS)
     assert b.restore(a.save(), now=5.0)["region"] == "iceland"
 

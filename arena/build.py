@@ -204,7 +204,7 @@ def python_zip(dest: Path, regions: list[dict]) -> str:
 
 def _public(r: dict) -> dict:
     """What the page and the worker are told about a region (no build paths)."""
-    return {k: r[k] for k in ("id", "title", "place", "spawns")}
+    return {k: r[k] for k in ("id", "title", "place", "spawns", "news") if k in r}
 
 
 def region_tiles(r: dict, use_tiles: bool) -> Path | None:
@@ -214,9 +214,12 @@ def region_tiles(r: dict, use_tiles: bool) -> Path | None:
 
 
 def world_manifest(r: dict, tiles: Path | None) -> dict:
+    from atlas_realms.tiles import chunks_bounds
+
     m = json.loads((ROOT / r["manifest"]).read_text())
     m.pop("_comment", None)
     m["region"] = _public(r)
+    m["bounds"] = chunks_bounds(m["ready_chunks"])  # exact tile edges: older exports rounded them outward
     if tiles is None:
         m["styles"], m["placeholder"] = [], True
     else:

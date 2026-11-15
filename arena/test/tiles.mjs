@@ -30,6 +30,7 @@ try {
     const m = JSON.parse(readFileSync(join(dist, region.manifest), "utf8"));
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } }); // no save from the last one
     const page = await context.newPage();
+    let switched = false; // a fresh page shows the default map first; count from the moment this one is picked
     page.on("console", (msg) => { if (msg.type() === "error") problems.push(`${region.id} console: ${msg.text()}`); });
     page.on("pageerror", (e) => problems.push(`${region.id} page error: ${e.message}`));
     page.on("request", (r) => { if (r.headers().range) ranged++; });
@@ -38,13 +39,14 @@ try {
       if (!hit) return;
       tiles.set(r.url(), r.status());
       if (r.status() === 200) perRegion.set(hit[1], (perRegion.get(hit[1]) || 0) + 1);
-      if (hit[1] !== region.id) problems.push(`${region.id}: loaded another region's tile ${r.url()}`);
+      if (switched && hit[1] !== region.id) problems.push(`${region.id}: loaded another region's tile ${r.url()}`);
       if (r.headers()["content-type"] !== "image/webp") problems.push(`${r.url()}: ${r.headers()["content-type"]}`);
     });
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForSelector("dialog#start[open]", { timeout: 120_000 });
     await page.selectOption("#start-region", region.id);
     await page.waitForFunction((id) => manifest.region.id === id && map.loaded(), region.id);
+    switched = true;
     await page.click("#start-form button[type=submit]");
     await page.waitForFunction(() => typeof lastState !== "undefined" && lastState);
     const [w, s, e, n] = m.bounds, mid = [(w + e) / 2, (s + n) / 2];

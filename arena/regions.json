@@ -17,7 +17,12 @@
      -41.2906,
      174.001
     ]
-   ]
+   ],
+   "news": {
+    "paper": "The Strait Courier",
+    "on": "on the Strait",
+    "where": "the Strait"
+   }
   },
   {
    "id": "iceland",
@@ -35,7 +40,12 @@
      65.6835,
      -18.0878
     ]
-   ]
+   ],
+   "news": {
+    "paper": "The Saga Courier",
+    "on": "across the island",
+    "where": "the island"
+   }
   }
  ]
 }

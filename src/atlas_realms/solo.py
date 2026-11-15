@@ -16,7 +16,7 @@ import h3
 
 from atlas_realms.bots import PERSONALITIES, Bot, decide
 from atlas_realms.fog import fog_geojson
-from atlas_realms.news import digest, events_of
+from atlas_realms.news import STRAIT, digest, events_of
 from atlas_realms.rules.chunks import at_zoom
 from atlas_realms.rules.classes import CLASSES
 from atlas_realms.rules.tunables import DEFAULT, Tunables
@@ -74,6 +74,7 @@ class Session:
     paused: bool = False
     t: Tunables = SOLO
     region: str = ""  # which map (the arena's regions.json id); the server's solo mode has only Cook Strait
+    desk: dict = field(default_factory=lambda: dict(STRAIT))  # the news desk's paper and place names
     battles: list[tuple[int, BattleRecord]] = field(default_factory=list)  # (tick, record), newest last
     results: dict[int, str] = field(default_factory=dict)  # the human's order id -> result
     history: list[tuple[int, BattleRecord]] = field(default_factory=list)  # the human's own battles, newest last
@@ -167,7 +168,7 @@ class Session:
         """'While you were away': the news since tick `since`."""
         w = self.world
         cities = {c: (h.name, h.tier or 1) for c, h in w.hexes.items()}
-        return digest(self.events, self.names, HUMAN, since, w.tick, cities)
+        return digest(self.events, self.names, HUMAN, since, w.tick, cities, self.desk)
 
     def set_look(self, look: str) -> None:
         if look not in SHIELD_LOOKS:
