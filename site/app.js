@@ -1,4 +1,4 @@
-// Atlas Realms static demo: MapLibre over a real basemap with the painted tiles draped on top.
+// Atlas static demo (atlas.dragonhound.dev): MapLibre over a real basemap with the painted tiles draped on top.
 (async function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
