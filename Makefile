@@ -2,7 +2,7 @@ UV ?= uv
 
 TEST_DSN ?= postgresql://atlas:atlas@127.0.0.1:5433/postgres
 
-.PHONY: help install lint format test test-db check static-check atlas-docs sim db-up db-down migrate tick tiles static sea-masks preview clean \
+.PHONY: help install lint format test test-db check static-check atlas-docs bake-plans sim db-up db-down migrate tick tiles static sea-masks preview clean \
 	arena arena-check arena-test arena-dev arena-tiles-test
 
 help:  ## Show this help
@@ -28,6 +28,9 @@ test-db:  ## Run the suite including schema tests against the compose database
 
 ATLAS_DIR ?= ../argus-atlas
 ATLAS_REF ?= origin/dev
+bake-plans:  ## Regenerate every bakes/<area>.sh from bakes/plans.json at the docs' argus-atlas commit (after atlas-docs)
+	$(UV) run --no-sync python scripts/bake_plans.py
+
 atlas-docs:  ## Import the argus-atlas docs (docs/atlas/) at ATLAS_REF from the checkout in ATLAS_DIR: with the re-bake
 	$(UV) run --no-sync python scripts/atlas_docs.py import --atlas $(ATLAS_DIR) --ref $(ATLAS_REF)
 
@@ -51,29 +54,35 @@ tick:  ## Run one game tick against $$ATLAS_REALMS_DSN (LOOP=1 to keep ticking)
 
 MAPS ?= var/maps
 
-tiles:  ## Export baked chunks ($$MAPS/<style>/<job>/fantasy.pmtiles) to var/tiles
-	$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS) var/tiles
+tiles:  ## Export every area's chunks ($$MAPS/areas/<area>/<style>/<job>) to var/tiles-areas/<area>: Atlas and the arena
+	$(foreach a,$(AREAS),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5) &&) true
 
-AREAS ?= iceland reunion
+# Atlas's published areas: the baked ones. bonifacio, seto, salish and cape have plans (bakes/<id>.sh) and AREA_INFO in
+# scripts/build_static.py; add each here once baked. The arena's regions (arena/regions.json) paint from the same exports.
+AREAS ?= iceland reunion cook-strait
 # Overview tiles go one level below each area's chunk zoom (Iceland z7, Reunion z11).
 OVERVIEW_MIN_iceland ?= 6
 OVERVIEW_MIN_reunion ?= 10
+OVERVIEW_MIN_cook-strait ?= 9
+OVERVIEW_MIN_bonifacio ?= 9
+OVERVIEW_MIN_seto ?= 9
+OVERVIEW_MIN_salish ?= 9
+OVERVIEW_MIN_cape ?= 9
 
-static:  ## Static map demo (no game, areas in $$MAPS/areas/<area>/<style>/<job>) in dist/static, e.g. for Cloudflare Pages
-	$(foreach a,$(AREAS),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5) &&) true
-	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static
+static: tiles  ## Static map demo (no game, areas in $$MAPS/areas/<area>/<style>/<job>) in dist/static, e.g. for Cloudflare Pages
+	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static --areas "$(AREAS)"
 
 sea-masks: static  ## Remake data/masks (where painted sea may show) from the OpenFreeMap ocean, then rebuild dist/static
 	$(foreach a,$(AREAS),$(UV) run scripts/sea_mask.py --tiles dist/static/tiles --area $(a) --out data/masks &&) true
-	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static
+	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static --areas "$(AREAS)"
 
 preview: tiles  ## Solo arena in the browser at http://127.0.0.1:8110
-	$(UV) run --no-sync python -m atlas_realms.api --tiles var/tiles --port 8110
+	$(UV) run --no-sync python -m atlas_realms.api --tiles var/tiles-areas/cook-strait --port 8110
 
 # The browser arena (arena/): the solo game in Pyodide, a static site, one map per region in arena/regions.json.
-# TILES=1 (the default when var/tiles or var/tiles-areas exists) paints each region from its `tiles` export; a region
+# TILES=1 (the default when var/tiles-areas exists) paints each region from its `tiles` export; a region
 # without one gets a placeholder basemap. Needs `npm ci` in arena/ once.
-TILES ?= $(if $(wildcard var/tiles var/tiles-areas),1,)
+TILES ?= $(if $(wildcard var/tiles-areas),1,)
 
 arena:  ## Build the browser arena into arena/dist (each region's painted tiles unless TILES=)
 	$(UV) run --no-sync python arena/build.py $(if $(TILES),--tiles,)

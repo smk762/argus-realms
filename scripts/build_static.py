@@ -49,12 +49,32 @@ INLINE_STYLE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.S | re.I)
 INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S | re.I)
 
 
-# The demo's areas, in switcher order. `frame` is the island's outline extent (Natural Earth 10m, rounded outward),
-# which the page fits on load; the tiles' own bounds include the chunks' sea around it.
-AREAS = [
+# Every area with a bake plan (bakes/<id>.sh), in switcher order. `frame` is what the page fits on load: an island's
+# outline extent (Natural Earth 10m, rounded outward), or for a 7x7 block its land chunks' extent; the tiles' own
+# bounds include the chunks' sea around it. The build publishes the areas named by --areas (the Makefile's AREAS,
+# what has been baked), so shipping a newly baked area is one word there.
+AREA_INFO = [
     {"id": "iceland", "label": "Iceland", "frame": [-24.55, 63.39, -13.49, 66.57]},
     {"id": "reunion", "label": "Réunion", "frame": [55.22, -21.38, 55.86, -20.86]},
+    # The Realms arena's default map: Marlborough Sounds to the Wairarapa.
+    {"id": "cook-strait", "label": "Cook Strait", "frame": [173.67, -42.3, 176.14, -40.44]},
+    # Planned arena regions (bakes/<id>.sh at the docs' commit), not baked yet.
+    {"id": "bonifacio", "label": "Strait of Bonifacio", "frame": [8.08, 40.44, 9.85, 42.3]},
+    {"id": "seto", "label": "Seto Inland Sea", "frame": [132.18, 33.13, 134.65, 35.18]},
+    {"id": "salish", "label": "Salish Sea", "frame": [-124.81, 47.51, -122.34, 49.16]},
+    {"id": "cape", "label": "Cape Peninsula", "frame": [17.92, -34.89, 19.69, -33.13]},
 ]
+DEFAULT_AREAS = ("iceland", "reunion", "cook-strait")
+AREAS = [a for a in AREA_INFO if a["id"] in DEFAULT_AREAS]
+
+
+def select_areas(ids: list[str]) -> list[dict]:
+    """The areas to publish, in switcher order; an id with no AREA_INFO entry is an error, not a skip."""
+    known = {a["id"] for a in AREA_INFO}
+    unknown = [i for i in ids if i not in known]
+    if unknown:
+        sys.exit(f"no AREA_INFO for {', '.join(unknown)}: add its label and frame to scripts/build_static.py")
+    return [a for a in AREA_INFO if a["id"] in ids]
 ATTRIBUTION = (
     'Painted by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a> from '
     '<a href="https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model">Copernicus DEM GLO-30</a> '
@@ -243,11 +263,11 @@ def public_bakes(manifest: dict) -> dict[str, dict | None]:
     return {st["name"]: st.get("bake") for st in manifest["styles"] if not st.get("patron_only")}
 
 
-def check_sync(tiles: Path, record: dict) -> None:
+def check_sync(tiles: Path, record: dict, areas: list[dict]) -> None:
     """The docs must be the ones of the build that baked these tiles (argus-studio#169). Checked for every area
     before anything is written, so a refused build leaves the last good dist/ alone."""
     builds = {}
-    for area in AREAS:
+    for area in areas:
         manifest_path = tiles / area["id"] / "manifest.json"
         if not manifest_path.exists():
             sys.exit(f"{manifest_path} not found: export the area's tiles first (make static)")
@@ -259,17 +279,18 @@ def check_sync(tiles: Path, record: dict) -> None:
         sys.exit(str(exc))
 
 
-def build(tiles: Path, out: Path) -> None:
+def build(tiles: Path, out: Path, areas: list[dict] | None = None) -> None:
+    areas = AREAS if areas is None else areas
     check_strip((ROOT / "site" / "index.html").read_text())
     record, docs_html, links = docs_page()
-    check_sync(tiles, record)
+    check_sync(tiles, record, areas)
     if out.exists():
         shutil.rmtree(out)
     shutil.copytree(
         ROOT / "site", out, ignore=lambda d, names: [n for n in names if d.endswith("dh") and n in SHARED_SKIP]
     )
     listing = []
-    for area in AREAS:
+    for area in areas:
         src = tiles / area["id"]
         manifest_path = src / "manifest.json"
         if not manifest_path.exists():
@@ -347,6 +368,11 @@ def main() -> None:
     p.add_argument("--tiles", type=Path, default=ROOT / "var" / "tiles-areas", help="Exported tiles, one dir per area")
     p.add_argument("--out", type=Path, default=ROOT / "dist" / "static")
     p.add_argument(
+        "--areas",
+        default=" ".join(DEFAULT_AREAS),
+        help="Space- or comma-separated area ids to publish (the Makefile's AREAS); each needs its export and AREA_INFO",
+    )
+    p.add_argument(
         "--check",
         action="store_true",
         help="Only check site/ (pasted strip, <html> marker, no inline scripts, CSP renders) and the imported "
@@ -356,7 +382,7 @@ def main() -> None:
     if a.check:
         check()
         return
-    build(a.tiles, a.out)
+    build(a.tiles, a.out, select_areas([i for i in a.areas.replace(",", " ").split() if i]))
 
 
 if __name__ == "__main__":

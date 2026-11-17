@@ -1,0 +1,89 @@
+{
+ "_comment": "Every area's bake plan: `make bake-plans` regenerates bakes/<name>.sh from these with atlas_realms.bakeplan (--area, the argus-atlas commit in docs/atlas/sync.json). tests/test_bakeplan.py fails when a committed plan differs, so a docs import (a new commit) and the plans move together. Islands list their chunks: Natural Earth misses an islet the paintings include.",
+ "cook-strait": {
+  "center": "-41.29,174.78",
+  "rings": 3,
+  "zoom": 10,
+  "land": "data/nz_mainland.geojson",
+  "layers": "water,rivers,roads,forest,urban",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "iceland": {
+  "tiles": [
+   "7/55/32",
+   "7/55/33",
+   "7/55/34",
+   "7/56/32",
+   "7/56/33",
+   "7/56/34",
+   "7/57/31",
+   "7/57/32",
+   "7/57/33",
+   "7/57/34",
+   "7/58/31",
+   "7/58/32",
+   "7/58/33",
+   "7/58/34",
+   "7/59/32",
+   "7/59/33"
+  ],
+  "zoom": 7,
+  "land": null,
+  "layers": "water,rivers,roads,forest,urban,glaciers",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "reunion": {
+  "tiles": [
+   "11/1338/1145",
+   "11/1338/1146",
+   "11/1338/1147",
+   "11/1339/1145",
+   "11/1339/1146",
+   "11/1339/1147",
+   "11/1339/1148",
+   "11/1340/1145",
+   "11/1340/1146",
+   "11/1340/1147",
+   "11/1340/1148",
+   "11/1341/1146",
+   "11/1341/1147",
+   "11/1341/1148"
+  ],
+  "zoom": 11,
+  "land": null,
+  "layers": "water,rivers,roads,forest,urban",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "bonifacio": {
+  "center": "41.3767,9.3164",
+  "rings": 3,
+  "zoom": 10,
+  "land": "data/bonifacio.geojson",
+  "layers": "water,rivers,roads,forest,urban",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "seto": {
+  "center": "34.1617,133.4180",
+  "rings": 3,
+  "zoom": 10,
+  "land": "data/seto.geojson",
+  "layers": "water,rivers,roads,forest,urban",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "salish": {
+  "center": "48.3415,-123.5742",
+  "rings": 3,
+  "zoom": 10,
+  "land": "data/salish.geojson",
+  "layers": "water,rivers,roads,forest,urban,glaciers",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ },
+ "cape": {
+  "center": "-34.1617,18.4570",
+  "rings": 3,
+  "zoom": 10,
+  "land": "data/cape.geojson",
+  "layers": "water,rivers,roads,forest,urban",
+  "styles": "antique,tolkien,imhof,watercolor,cyberpunk,minecraft,pixel"
+ }
+}

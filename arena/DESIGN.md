@@ -98,7 +98,7 @@ order but not shape; the test compares the fog by shape. Nothing in the game sta
 ## Tiles
 
 The painted Cook Strait tiles are baked on the GPU host by `bakes/cook-strait.sh` and are not in git. The local export
-(`make tiles`: `var/maps/<style>/<job>/fantasy.pmtiles` → `var/tiles/<style>/<z>/<x>/<y>.png`) measures:
+(`make tiles`: `var/maps/areas/<area>/<style>/<job>/fantasy.pmtiles` → `var/tiles-areas/<area>/<style>/<z>/<x>/<y>.png`) measures:
 
 | | antique | tolkien | both |
 |---|---|---|---|
@@ -315,7 +315,7 @@ brings Realms into view. Reduced motion: camera moves don't animate and CSS tran
 
 ```bash
 make install && npm ci --prefix arena
-make arena                  # build arena/dist (painted tiles from var/tiles when it exists)
+make arena                  # build arena/dist (painted tiles from var/tiles-areas when it exists)
 make arena-dev              # build and serve on http://127.0.0.1:8120 with the _headers CSP
 make arena-test             # build without tiles + the parity test (in `make check` and CI)
 node arena/test/playtest.mjs http://127.0.0.1:8120/ review   # Playwright play-test, local only

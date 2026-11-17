@@ -7,7 +7,7 @@
    "place": "New Zealand",
    "manifest": "arena/world/cook-strait.json",
    "outline": "data/nz_mainland.geojson",
-   "tiles": "var/tiles",
+   "tiles": "var/tiles-areas/cook-strait",
    "spawns": [
     [
      -41.2865,

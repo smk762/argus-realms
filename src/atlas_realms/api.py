@@ -1,6 +1,6 @@
 """HTTP API and static files for the browser client.
 
-    python -m atlas_realms.api --tiles var/tiles --port 8110      # then open http://127.0.0.1:8110
+    python -m atlas_realms.api --tiles var/tiles-areas/cook-strait --port 8110      # then open http://127.0.0.1:8110
 
 Solo arena only for now: sessions live in memory and are lost on restart. PvP (accounts, the shared
 Postgres world) adds its own routes next to these without changing the client's state shape.

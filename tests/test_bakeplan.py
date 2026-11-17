@@ -2,7 +2,9 @@ import io
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from atlas_realms.bakeplan import RELEASE_IMAGE, canvas_bbox, dem_bbox, main, raster_order
+import pytest
+
+from atlas_realms.bakeplan import canvas_bbox, dem_bbox, glo30_tiles, main, raster_order, synced_commit
 
 NZ = Path(__file__).parent.parent / "data" / "nz_mainland.geojson"
 
@@ -46,16 +48,101 @@ def test_plan_skips_sea_and_writes_one_chunk_per_style():
     assert "labels --job /data/out/atlas/tolkien/" not in script
 
 
-def test_area_plan_writes_under_areas_with_the_release_image():
+def test_area_plan_writes_under_areas_with_a_prebuilt_image():
     buf = io.StringIO()
+    commit = "b" * 40
     with redirect_stdout(buf):
         main(
             ["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--styles", "antique,tolkien", "--land", str(NZ)]
-            + ["--area", "--image", RELEASE_IMAGE]
+            + ["--area", "--image", "ghcr.io/smk762/argus-atlas:0.4.0", "--commit", commit]
         )
     script = buf.getvalue()
-    assert f"-v $ATLAS_MAPS:/data/out/atlas {RELEASE_IMAGE}" in script
-    assert "docker build" not in script  # a released image is pulled, not built
+    assert "-v $ATLAS_MAPS:/data/out/atlas ghcr.io/smk762/argus-atlas:0.4.0" in script
+    assert "docker build" not in script  # a prebuilt image is pulled, not built
     assert 'mkdir -p "$ATLAS_MAPS"/areas/t/tolkien' in script
     assert "--out /data/out/atlas/areas/t/tolkien/tolkien-10-1009-641" in script
-    assert script.count("argus-atlas labels --job /data/out/atlas/areas/t/antique/") == 7
+    assert f'grep -L {commit} "$ATLAS_MAPS"/areas/t/*/*/job.json' in script  # no chunks beside another build's
+
+
+def test_the_default_build_is_the_docs_commit():
+    """Tiles and docs from one argus-atlas build: the plan builds the image at docs/atlas/sync.json's commit."""
+    commit = synced_commit()
+    assert commit and len(commit) == 40
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--land", str(NZ), "--area"])
+    script = buf.getvalue()
+    assert f"git checkout {commit} && docker build -t argus-atlas:{commit[:7]}" in script
+    assert f"docker image inspect argus-atlas:{commit[:7]}" in script
+    assert f"-v $ATLAS_MAPS:/data/out/atlas argus-atlas:{commit[:7]}" in script
+    assert script.index("docker image inspect") < script.index("argus-atlas dem")
+
+
+def test_a_chunk_list_bakes_exactly_those_chunks():
+    buf = io.StringIO()
+    tiles = "7/57/31,7/55/32,7/56/32"
+    with redirect_stdout(buf):
+        main(["--name", "ice", "--tiles", tiles, "--zoom", "7", "--area", "--styles", "antique"])
+    chunks = [
+        line.split("--tile ")[1].split()[0] for line in buf.getvalue().splitlines() if "argus-atlas chunk" in line
+    ]
+    assert chunks == ["7/57/31", "7/55/32", "7/56/32"]  # north to south, then west to east
+    assert "chunks listed with --tiles: 3" in buf.getvalue()
+    with pytest.raises(SystemExit):
+        main(["--name", "ice", "--tiles", "8/57/31", "--zoom", "7"])
+    with pytest.raises(SystemExit):
+        main(["--name", "ice", "--zoom", "7"])
+    with pytest.raises(SystemExit):
+        main(["--name", "ice", "--tiles", "7/57/31,7/57/31", "--zoom", "7"])
+
+
+def test_a_dem_over_the_default_tile_budget_raises_it():
+    assert glo30_tiles((-25.67, 62.74, -10.89, 67.75)) == 16 * 6  # Iceland
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(["--name", "ice", "--tiles", "7/55/32,7/59/33", "--zoom", "7", "--area"])
+    assert "--allow-missing --max-tiles " in buf.getvalue()
+
+
+def test_the_committed_plans_are_current():
+    """bakes/<name>.sh match bakes/plans.json at the docs' argus-atlas commit: a docs import that moves the commit
+    fails here until `make bake-plans` re-pins every plan."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    done = subprocess.run(
+        [sys.executable, str(root / "scripts" / "bake_plans.py"), "--check"], capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    commit = synced_commit()
+    for plan in (root / "bakes").glob("*.sh"):
+        assert f"argus-atlas:{commit[:7]}" in plan.read_text(), plan.name
+
+
+def test_every_plan_is_an_atlas_area():
+    import json
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "scripts"))
+    import build_static
+
+    plans = {k for k in json.loads((root / "bakes" / "plans.json").read_text()) if not k.startswith("_")}
+    assert plans == {p.stem for p in (root / "bakes").glob("*.sh")}
+    assert plans == {a["id"] for a in build_static.AREA_INFO}  # baked or not, each has its label and frame
+
+
+def test_plans_forward_the_gpu_lease_settings_by_name():
+    """Bakes take argus-iris leases when the host sets ARGUS_GPU_*: forwarded by name, never written into a plan."""
+    from atlas_realms.bakeplan import GPU_ENV
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--land", str(NZ), "--area"])
+    script = buf.getvalue()
+    run = next(line for line in script.splitlines() if line.startswith("RUN="))
+    for name in GPU_ENV:
+        assert f" -e {name} " in run, name
+    assert "ATLAS_GPU_PRIORITY" in GPU_ENV and "TOKEN=" not in run
+    assert "/services/comfyui/warm" in script  # an idle-stopped ComfyUI is woken through iris

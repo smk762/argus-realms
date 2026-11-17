@@ -32,7 +32,7 @@ jobs:
             exit 0
           fi
           title="argus-atlas dev moved past the imported docs"
-          body="argus-atlas \`dev\` is at [${head:0:7}](https://github.com/smk762/argus-atlas/commit/$head); Atlas's docs and tiles are at [${imported:0:7}](https://github.com/smk762/argus-atlas/commit/$imported) ([changes](https://github.com/smk762/argus-atlas/compare/$imported...$head)). Re-bake at the new commit and import the docs there (\`python scripts/atlas_docs.py import --atlas <checkout>\`) in one PR: \`make static\` refuses tiles and docs of different commits."
+          body="argus-atlas \`dev\` is at [${head:0:7}](https://github.com/smk762/argus-atlas/commit/$head); Atlas's docs and tiles are at [${imported:0:7}](https://github.com/smk762/argus-atlas/commit/$imported) ([changes](https://github.com/smk762/argus-atlas/compare/$imported...$head)). Import the docs at the new commit (\`make atlas-docs\`), re-pin the plans (\`make bake-plans\`) and re-bake, in one PR: \`make static\` refuses tiles and docs of different commits."
           open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
           if [ -n "$open" ]; then
             # Comment only when dev moved again since the issue last named its head.

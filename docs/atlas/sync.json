@@ -1,19 +1,19 @@
 {
  "atlas": {
   "repo": "smk762/argus-atlas",
-  "commit": "da3682de199845e95ea04e78115a93ebc9b72ae0",
-  "version": "0.3.1.dev41+gda3682d",
+  "commit": "97f867e303933c229c1c98a5bc549eb1c77eb1f0",
+  "version": "0.3.1.dev43+g97f867e",
   "ref": "origin/dev"
  },
- "imported_at": "2026-11-17T15:58:04+00:00",
+ "imported_at": "2026-11-17T16:55:31+00:00",
  "files": {
   "README.md": {
    "as": "overview.md",
-   "sha256": "31dff7e0fbedb3a12a097538d799bf84545986a5bd506f128ccd1c39533e7002"
+   "sha256": "723c2e63f5c095f47e234aec3bb077404a8797c7d91cbd7679a3d88f47188b85"
   },
   "docs/chunks-and-mosaic.md": {
    "as": "chunks-and-mosaic.md",
-   "sha256": "447713a4ec1b18ebca1bfd4ec3ddbd596edc6b12cadaccc659825b5ecd837fb5"
+   "sha256": "3707bfa0f1f07d7be1ed3645cfff1375a170b1089d8b8312f35e6749d19f78ee"
   },
   "docs/alignment-gate.md": {
    "as": "alignment-gate.md",

@@ -1,6 +1,6 @@
 """Re-encode exported XYZ tiles (`make tiles`: <style>/<z>/<x>/<y>.png) as an XYZ tree of WebP files.
 
-    uv run --no-sync python arena/tiles_webp.py var/tiles out/ --quality 88
+    uv run --no-sync python arena/tiles_webp.py var/tiles-areas/cook-strait out/ --quality 88
 
 The arena serves plain tile folders: one small file per tile, fetched whole. Cloudflare Pages doesn't answer HTTP
 range requests on *.pages.dev, and a custom domain only does so for extensions the zone caches, so a single-file

@@ -1,6 +1,6 @@
 """Export baked chunks as static tiles for the client.
 
-    python -m atlas_realms.tiles var/maps var/tiles
+    python -m atlas_realms.tiles var/maps/areas/cook-strait var/tiles-areas/cook-strait   # or `make tiles`: every area
 
 Reads `<maps>/<style>/<job>/fantasy.pmtiles` (one archive per chunk, as argus-atlas writes them) and
 writes `<out>/<style>/<z>/<x>/<y>.png` plus `<out>/manifest.json`. A new chunk is only new files,
