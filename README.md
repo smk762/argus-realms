@@ -24,7 +24,7 @@ argus-atlas chunk + labels ──▶ fantasy.pmtiles ──▶ atlas_realms.tile
 (bakes/<area>.sh)              labels.geojson      XYZ PNG tiles, manifest  site/, tiles, _headers
 ```
 
-1. **Bake.** `bakes/<area>.sh` (cook-strait, iceland, reunion) runs an argus-atlas image built at the docs' commit on a GPU host with ComfyUI: DEM, OSM extract, then one `chunk` per tile per style, then `labels`, into `$ATLAS_MAPS/areas/<area>/`. Atlas and the arena paint from these same bakes. Host paths come from `ATLAS_HOST`, `ATLAS_MAPS` and `ATLAS_MODELS`. `python -m atlas_realms.bakeplan` generates the plans.
+1. **Bake.** `bakes/<area>.sh` (cook-strait, iceland, reunion) runs an argus-atlas image built at the docs' commit on a GPU host with ComfyUI: DEM, OSM extract, then one `chunk` per tile per style, then `labels`, into `$ATLAS_MAPS/areas/<area>/`. Atlas and the arena paint from these same bakes. Host paths come from `ATLAS_HOST`, `ATLAS_MAPS` and `ATLAS_MODELS`. `make bake-plans` generates every area's plan from `bakes/plans.json`; bonifacio, seto, salish and cape are planned, not yet baked.
 2. **Export.** `make tiles` (`python -m atlas_realms.tiles` per area, into `var/tiles-areas/<area>`) turns each style's chunk archives into static `<style>/<z>/<x>/<y>.png` tiles plus a `manifest.json`, and merges the chunks' place names into one `labels.geojson`.
 3. **Build.** `scripts/build_static.py` copies `site/` and the tiles into `dist/static/`. It writes `tiles/areas.json` for the area switcher, renders the `og.jpg` card from the tiles, and writes a `_headers` file with a CSP that hashes the page's inline styles. It also checks the Cloudflare Pages limits (25 MiB per file, 20,000 files).
 

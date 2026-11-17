@@ -6,7 +6,14 @@
 set -euo pipefail
 : "${ATLAS_HOST:?}" "${ATLAS_MAPS:?}" "${ATLAS_MODELS:?}"
 
-RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas ghcr.io/smk762/argus-atlas:0.3.0"
+# 0. The image at argus-atlas 97f867e, the commit of the docs Atlas publishes (once per host):
+#   git clone https://github.com/smk762/argus-atlas.git argus-atlas-97f867e && cd argus-atlas-97f867e && \
+#   git checkout 97f867e303933c229c1c98a5bc549eb1c77eb1f0 && docker build -t argus-atlas:97f867e --build-arg EXTRAS="server,cli,tiles" .
+docker image inspect argus-atlas:97f867e >/dev/null 2>&1 || { echo 'build argus-atlas:97f867e first (step 0)'; exit 1; }
+# Chunks of another argus-atlas build here would be seamed against: re-bake into a fresh ATLAS_MAPS.
+foreign=$(grep -L 97f867e303933c229c1c98a5bc549eb1c77eb1f0 "$ATLAS_MAPS"/areas/seto/*/*/job.json 2>/dev/null || true)
+[ -z "$foreign" ] || { echo "jobs from another argus-atlas build under $ATLAS_MAPS/areas/seto/:"; echo "$foreign" | head -3; exit 1; }
+RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:97f867e"
 
 # 1. DEM: Copernicus GLO-30 for the block plus margins, one GeoTIFF (all-sea tiles are filled with 0 m)
 [ -f "$ATLAS_HOST"/dem/seto_glo30.tif ] || \

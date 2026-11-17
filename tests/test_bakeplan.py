@@ -92,6 +92,8 @@ def test_a_chunk_list_bakes_exactly_those_chunks():
         main(["--name", "ice", "--tiles", "8/57/31", "--zoom", "7"])
     with pytest.raises(SystemExit):
         main(["--name", "ice", "--zoom", "7"])
+    with pytest.raises(SystemExit):
+        main(["--name", "ice", "--tiles", "7/57/31,7/57/31", "--zoom", "7"])
 
 
 def test_a_dem_over_the_default_tile_budget_raises_it():
@@ -100,3 +102,32 @@ def test_a_dem_over_the_default_tile_budget_raises_it():
     with redirect_stdout(buf):
         main(["--name", "ice", "--tiles", "7/55/32,7/59/33", "--zoom", "7", "--area"])
     assert "--allow-missing --max-tiles " in buf.getvalue()
+
+
+def test_the_committed_plans_are_current():
+    """bakes/<name>.sh match bakes/plans.json at the docs' argus-atlas commit: a docs import that moves the commit
+    fails here until `make bake-plans` re-pins every plan."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    done = subprocess.run(
+        [sys.executable, str(root / "scripts" / "bake_plans.py"), "--check"], capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    commit = synced_commit()
+    for plan in (root / "bakes").glob("*.sh"):
+        assert f"argus-atlas:{commit[:7]}" in plan.read_text(), plan.name
+
+
+def test_every_plan_is_an_atlas_area():
+    import json
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "scripts"))
+    import build_static
+
+    plans = {k for k in json.loads((root / "bakes" / "plans.json").read_text()) if not k.startswith("_")}
+    assert plans == {p.stem for p in (root / "bakes").glob("*.sh")}
+    assert plans == {a["id"] for a in build_static.AREA_INFO}  # baked or not, each has its label and frame

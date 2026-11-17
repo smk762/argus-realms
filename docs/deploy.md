@@ -30,7 +30,7 @@ The bakes are the expensive part, because each chunk is a GPU painting. Copy `va
 
 ## 3. Baking new areas or styles (GPU)
 
-Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answering on `127.0.0.1:8188` on that host. The plans for the current areas are `bakes/cook-strait.sh`, `bakes/iceland.sh` and `bakes/reunion.sh`, all seven styles each, all with the image at the docs' commit.
+Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answering on `127.0.0.1:8188` on that host. Every area has a plan, `bakes/<area>.sh`, generated from `bakes/plans.json` by `make bake-plans` with the image at the docs' commit: the baked areas (cook-strait, iceland, reunion) and the planned arena regions (bonifacio, seto, salish, cape), all seven styles each. Never edit a plan by hand; change `plans.json` and regenerate. After a docs import (`make atlas-docs`) the commit moves, and `make test` fails until `make bake-plans` re-pins every plan.
 
 1. **Plan:** `python -m atlas_realms.bakeplan --name <area> --center <lat,lng> --rings <n> --zoom <z> --styles <list> --land <land.geojson> --area` prints the DEM, OSM and per-chunk commands. With `--land`, it skips all-sea chunks; `--tiles z/x/y,...` bakes an exact chunk list instead (the islands: Natural Earth's outline misses an islet the paintings include). Step 0 builds the image at the commit in `docs/atlas/sync.json` from a clone (the build needs `.git` to record the commit).
 2. **Run on the GPU host:** set `ATLAS_HOST` (dir holding `dem/` and `recipes/`), `ATLAS_MAPS` (output share) and `ATLAS_MODELS` (model tree). Each line skips chunks already baked, so a stopped run resumes where it left off. A re-bake at a new commit goes into a **fresh** `ATLAS_MAPS` (for example `<share>/maps-<sha7>`): `chunk` seams against any baked neighbour, so the script refuses to start beside jobs of another argus-atlas build. DEMs and OSM extracts under `ATLAS_HOST` are reused.
@@ -40,8 +40,8 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 
 ## 4. Adding an area to Atlas
 
-1. Bake it into `var/maps/areas/<area>/<style>/<job>/`.
-2. Add it to `AREAS` in the Makefile, with an `OVERVIEW_MIN_<area>` (the lowest zoom shown).
+1. Give it an entry in `bakes/plans.json` and in `AREA_INFO` (label and frame) in `scripts/build_static.py`, run `make bake-plans`, and bake it into `var/maps/areas/<area>/<style>/<job>/`. bonifacio, seto, salish and cape are already planned this far.
+2. Once it is baked, add it to `AREAS` in the Makefile, with an `OVERVIEW_MIN_<area>` (the lowest zoom shown): that is what publishes it.
 3. `make static` exports the tiles, builds `dist/static/` and writes `tiles/areas.json`, which drives the area switcher.
 4. `make sea-masks` remakes `data/masks/` from the OpenFreeMap ocean, so painted sea only shows near the coast.
 5. Choose neutral, well-known places: islands, straits, mountain ranges. Don't put demo data anywhere that ties the project to a person.
@@ -57,7 +57,7 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 Atlas publishes the argus-atlas docs at `/docs/`, and "How it was made" links each step there. The docs, the tiles and the argus-atlas version must agree at argus-atlas `dev` HEAD (argus-studio#169):
 
 - `docs/atlas/` holds the imported docs (the README as the overview, chunks and mosaic, the alignment gate, the CLI reference) and `sync.json`: the argus-atlas commit and version, and a SHA256 per file. Never edit those files; re-import them.
-- `make atlas-docs` (`ATLAS_DIR=<argus-atlas checkout>`, `ATLAS_REF=origin/dev` by default) imports them at a commit. It reads with `git show`, so the checkout's working tree doesn't matter, and it refuses a doc that fails the opsec gate (private addresses, home paths, emails, host names, `OPSEC_DENYLIST`). `docs/your-first-bake.md` is never imported.
+- `make atlas-docs` (`ATLAS_DIR=<argus-atlas checkout>`, `ATLAS_REF=origin/dev` by default) imports them at a commit; follow it with `make bake-plans`, so every plan bakes at that commit. It reads with `git show`, so the checkout's working tree doesn't matter, and it refuses a doc that fails the opsec gate (private addresses, home paths, emails, host names, `OPSEC_DENYLIST`). `docs/your-first-bake.md` is never imported.
 - `make static` refuses tiles whose bakes record another argus-atlas commit than `sync.json`, and tiles from a build before 0.4, which recorded none. It checks this before touching `dist/static`, so a refused build leaves the last good one in place. Re-bake with an image built at the docs' commit, or import the docs at the bakes' commit, and commit both together.
 - The `argus-atlas drift` workflow runs daily and opens an issue (or comments on the open one) when argus-atlas `dev` moves past `sync.json`.
 - `make static-check` (CI) checks the import offline: the record, the opsec gate, the render, and every anchor the panel links to.

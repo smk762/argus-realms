@@ -151,6 +151,8 @@ def main(argv: list[str] | None = None) -> None:
         block = [tuple(int(v) for v in t.split("/")) for t in a.tiles.split(",") if t]
         if any(len(t) != 3 or t[0] != a.zoom for t in block):
             p.error(f"--tiles must be z/x/y chunks at --zoom {a.zoom}")
+        if len(set(block)) != len(block):
+            p.error("--tiles lists a chunk twice")
     elif a.center:
         lat, lng = (float(v) for v in a.center.split(","))
         centre = home_chunk(h3.latlng_to_cell(lat, lng, 9), a.zoom)
