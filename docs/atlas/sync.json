@@ -1,15 +1,15 @@
 {
  "atlas": {
   "repo": "smk762/argus-atlas",
-  "commit": "97f867e303933c229c1c98a5bc549eb1c77eb1f0",
-  "version": "0.3.1.dev43+g97f867e",
+  "commit": "e3f27791bc0b276428111a90dcbd2a95c01975b9",
+  "version": "0.3.1.dev45+ge3f2779",
   "ref": "origin/dev"
  },
- "imported_at": "2026-11-17T16:55:31+00:00",
+ "imported_at": "2026-11-17T17:44:59+00:00",
  "files": {
   "README.md": {
    "as": "overview.md",
-   "sha256": "723c2e63f5c095f47e234aec3bb077404a8797c7d91cbd7679a3d88f47188b85"
+   "sha256": "f724e641d9077cc81065a3d11fb9ae62329d04207bf1dd3aadf44834e43a3607"
   },
   "docs/chunks-and-mosaic.md": {
    "as": "chunks-and-mosaic.md",
