@@ -5,7 +5,7 @@
 Copies `site/` and each area's exported XYZ tiles (`python -m atlas_realms.tiles <maps>/areas/<area>
 var/tiles-areas/<area>`, see `make static`) into one directory any static host can serve, writes
 `tiles/areas.json` for the area switcher, renders `og.jpg` from the tiles, renders the imported argus-atlas docs into
-`docs.html` (scripts/atlas_docs.py), and checks the Cloudflare Pages limits (25 MiB per file, 20,000 files). It
+`docs/index.html`, served at /docs/ (scripts/atlas_docs.py), and checks the Cloudflare Pages limits (25 MiB per file, 20,000 files). It
 refuses tiles whose bakes record another argus-atlas commit than the docs. Nothing here runs the game: the solo arena
 needs its server.
 """
@@ -63,7 +63,7 @@ ATTRIBUTION = (
 )
 
 
-# "How it was made" deep-links each step to its section of docs.html. The build checks every anchor exists, so a
+# "How it was made" deep-links each step to its section of the docs page (/docs/). The build checks every anchor exists, so a
 # re-import that renames a heading fails here instead of leaving a dead link.
 DOC_LINKS = {
     "dem": "cli-argus-atlas-dem",
@@ -80,12 +80,12 @@ DOC_LINKS = {
 def docs_links(anchors: set[str]) -> dict[str, str]:
     missing = sorted(a for a in DOC_LINKS.values() if a not in anchors)
     if missing:
-        sys.exit(f"docs.html has no {', '.join('#' + a for a in missing)}: update DOC_LINKS after the docs import")
-    return {k: f"docs.html#{a}" for k, a in DOC_LINKS.items()}
+        sys.exit(f"the docs page has no {', '.join('#' + a for a in missing)}: update DOC_LINKS after the docs import")
+    return {k: f"{atlas_docs.PAGE_DIR}/#{a}" for k, a in DOC_LINKS.items()}
 
 
 def docs_page() -> tuple[dict, str, dict[str, str]]:
-    """The imported argus-atlas docs: their record, docs.html (vendored stylesheets inlined) and the step links."""
+    """The imported argus-atlas docs: their record, the docs page (vendored stylesheets inlined) and the step links."""
     try:
         record = atlas_docs.load_record()
         rendered = atlas_docs.render(record)
@@ -94,7 +94,7 @@ def docs_page() -> tuple[dict, str, dict[str, str]]:
     strip = (ROOT / "site" / "vendor" / "dh" / "dh-strip.html").read_text().strip()
     page = inline_shared_css(atlas_docs.page(record, rendered, strip))
     if INLINE_SCRIPT.search(page):
-        sys.exit("docs.html has an inline <script>")
+        sys.exit("the docs page has an inline <script>")
     return record, page, docs_links(rendered.anchors)
 
 
@@ -104,7 +104,7 @@ def _sha256(text: str) -> str:
 
 def security_headers(html: str, *others: str) -> str:
     """Response headers for every path: a CSP that hashes the pages' inline <style>s (index.html, then any other page
-    such as docs.html, whose inlined vendored stylesheets hash the same), plus the companion headers."""
+    such as the docs page, whose inlined vendored stylesheets hash the same), plus the companion headers."""
     if INLINE_SCRIPT.search(html):
         sys.exit("site/index.html has an inline <script>: move it into site/app.js (the CSP allows no inline scripts)")
     hashes = [_sha256(body) for page in (html, *others) for body in INLINE_STYLE.findall(page)]
@@ -312,11 +312,12 @@ def build(tiles: Path, out: Path) -> None:
     (out / "404.html").write_text("<!doctype html><title>Not found</title><p>Not found.</p>\n")
     page = inline_shared_css((ROOT / "site" / "index.html").read_text())
     (out / "index.html").write_text(page)
-    (out / "docs.html").write_text(docs_html)
-    (out / atlas_docs.IMG_DIR).mkdir()
+    docs_dir = out / atlas_docs.PAGE_DIR  # site/docs/ (docs.css) is already copied
+    (docs_dir / "index.html").write_text(docs_html)
+    (docs_dir / atlas_docs.IMG_DIR).mkdir(parents=True, exist_ok=True)
     for entry in record["files"].values():
         if entry["as"].startswith("img/"):
-            shutil.copy2(atlas_docs.VENDOR / entry["as"], out / atlas_docs.IMG_DIR / Path(entry["as"]).name)
+            shutil.copy2(atlas_docs.VENDOR / entry["as"], docs_dir / atlas_docs.IMG_DIR / Path(entry["as"]).name)
     (out / "_headers").write_text(HEADERS + security_headers(page, docs_html))
     first = listing[0]
     render_og(tiles / first["id"], first["styles"][0], first["frame"], out / "og.jpg", z=first["chunk_zoom"] + 1)
@@ -333,10 +334,10 @@ def check() -> None:
         sys.exit("site/index.html: a vendored stylesheet link was not inlined")
     record, docs_html, _ = docs_page()
     if SHARED_LINK.search(docs_html):
-        sys.exit("docs.html: a vendored stylesheet link was not inlined")
-    # docs.html adds no inline style of its own: the same hashes as index.html, so the CSP is unchanged by it.
+        sys.exit("the docs page: a vendored stylesheet link was not inlined")
+    # The docs page adds no inline style of its own: the same hashes as index.html, so the CSP is unchanged by it.
     if security_headers(page, docs_html) != security_headers(page):
-        sys.exit("docs.html adds an inline <style> index.html doesn't have: put it in site/docs.css")
+        sys.exit("the docs page adds an inline <style> index.html doesn't have: put it in site/docs/docs.css")
     a = record["atlas"]
     print(f"site/: strip, marker, inline styles and CSP ok; argus-atlas docs {a['version']} at {a['commit'][:7]} ok")
 

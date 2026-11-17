@@ -138,9 +138,9 @@ make preview   # export var/maps -> var/tiles and serve the solo arena on http:/
   browser-API code in `site/` or `web/`, and re-run `npx -y modern-web-guidance@latest legacy-scan site` after big changes.
   `site/` is the static demo: no inline scripts (the page logic is `site/app.js`), MapLibre comes from cdnjs with SRI
   hashes (bump the hash with the version), and `scripts/build_static.py` writes the CSP into `_headers`, hashing the
-  inline `<style>`. A new third-party origin needs a CSP change there. `docs.html` is rendered at build time from the
+  inline `<style>`. A new third-party origin needs a CSP change there. The docs page (`/docs/`, `docs/index.html` in the build) is rendered at build time from the
   argus-atlas docs imported into `docs/atlas/` (`scripts/atlas_docs.py`, `make atlas-docs`; `sync.json` records the atlas
-  commit, version and file hashes): never edit them, re-import. Its styles live in `site/docs.css`, so it adds no CSP
+  commit, version and file hashes): never edit them, re-import. Its styles live in `site/docs/docs.css`, so it adds no CSP
   hash. `make static` refuses tiles baked at another atlas commit than the docs (docs/deploy.md §5); "How it was made"
   and the style tooltips read the bake from the export manifest (`atlas_realms.tiles.bake_summary`), never hard-code it.
   `site/vendor/dh/` is the vendored Dragonhound shared layer (tokens, demo strip, badge, `dh-theme.js`), pinned by

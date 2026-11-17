@@ -1,4 +1,4 @@
-"""The argus-atlas docs on Atlas: import them at one atlas commit, check them, render them into docs.html.
+"""The argus-atlas docs on Atlas: import them at one atlas commit, check them, render them into /docs/ (docs/index.html).
 
     python scripts/atlas_docs.py import --atlas ../argus-atlas [--ref origin/dev]   # online: updates docs/atlas/
     python scripts/atlas_docs.py check                                              # offline: what CI runs
@@ -43,12 +43,13 @@ REPO = "smk762/argus-atlas"
 GITHUB = f"https://github.com/{REPO}"
 PYPI = "https://pypi.org/project/argus-atlas/"
 SETUPTOOLS_SCM = "setuptools-scm==8.3.1"
-IMG_DIR = "docs-img"  # where the build publishes the docs' images, next to docs.html
+PAGE_DIR = "docs"  # the page is served at /docs/ (docs/index.html in the build)
+IMG_DIR = "img"  # the docs' images, beside it at /docs/img/
 
 
 @dataclass(frozen=True)
 class Doc:
-    id: str  # section id on docs.html, and the prefix of its heading ids
+    id: str  # section id on the docs page, and the prefix of its heading ids
     path: str  # in argus-atlas
     title: str
 
@@ -308,7 +309,7 @@ def render(record: dict, vendor: Path = VENDOR) -> Rendered:
                     path = local_image(child.attrGet("src") or "", doc.path)
                     if not path:
                         continue  # another origin: img-src would block it
-                    child.attrSet("src", f"{IMG_DIR}/{PurePosixPath(path).name}")
+                    child.attrSet("src", f"/{PAGE_DIR}/{IMG_DIR}/{PurePosixPath(path).name}")
                     child.attrSet("loading", "lazy")
                 elif child.type == "link_open":
                     href, external = resolve(child.attrGet("href") or "", doc)
@@ -343,7 +344,7 @@ def external(href: str, text: str) -> str:
 
 
 def page(record: dict, rendered: Rendered, strip: str) -> str:
-    """docs.html: the shared strip, a header naming the atlas build, the contents and the docs. No inline script or
+    """The docs page (/docs/): the shared strip, a header naming the atlas build, the contents and the docs. No inline script or
     style of its own (docs.css); the build inlines the vendored stylesheets, as on index.html."""
     a = record["atlas"]
     version, short = html.escape(a["version"]), a["commit"][:7]
@@ -364,22 +365,22 @@ def page(record: dict, rendered: Rendered, strip: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>argus-atlas docs · Atlas</title>
 <meta name="description" content="How Atlas's maps were made: the argus-atlas docs at the build that baked them.">
-<link rel="canonical" href="https://atlas.dragonhound.dev/docs.html">
+<link rel="canonical" href="https://atlas.dragonhound.dev/docs/">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-icon.png">
 <meta name="color-scheme" content="light dark">
-<script src="vendor/dh/dh-theme.js"></script>
+<script src="/vendor/dh/dh-theme.js"></script>
 <link rel="stylesheet" href="vendor/dh/dh-tokens.css">
 <link rel="stylesheet" href="vendor/dh/dh-strip.css">
 <link rel="stylesheet" href="vendor/dh/dh-badge.css">
-<link rel="stylesheet" href="docs.css">
+<link rel="stylesheet" href="/docs/docs.css">
 </head>
 <body>
 <a class="skip" href="#docs">Skip to the docs</a>
 {strip}
 <header class="docs-head">
-  <p class="back"><a href="./">← Back to the map</a></p>
+  <p class="back"><a href="/">← Back to the map</a></p>
   <h1>argus-atlas docs</h1>
   <p class="build">The docs of the argus-atlas build that baked these maps: version <strong>{version}</strong>,
     commit <code>{short}</code>.</p>

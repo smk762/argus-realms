@@ -133,7 +133,7 @@ def test_render_rewrites_links_images_and_headings(atlas: Path, vendor: Path) ->
     html = r.html
     assert "picture" not in html and "shields.io" not in html and "example.org" not in html
     assert "<script>" not in html and "&lt;script&gt;" in html  # raw HTML is never passed through
-    assert 'src="docs-img/hero.jpg"' in html and 'src="docs-img/seam.png"' in html
+    assert 'src="/docs/img/hero.jpg"' in html and 'src="/docs/img/seam.png"' in html
     assert 'href="#alignment-gate-when-it-fails"' in html and 'href="#chunks-and-mosaic"' in html
     assert 'href="#chunks-and-mosaic-one-chunk"' in html  # an in-doc anchor gets its doc's prefix
     first_bake = f'href="https://github.com/smk762/argus-atlas/blob/{commit}/docs/your-first-bake.md"'
@@ -159,6 +159,9 @@ def test_the_page_names_the_build_and_links_it(atlas: Path, vendor: Path) -> Non
     assert f'href="{ad.PYPI}"' in out  # a dev build: the project page
     assert ad.pypi_url("0.4.0") == f"{ad.PYPI}0.4.0/" and ad.pypi_url("0.4.0rc1") == f"{ad.PYPI}0.4.0rc1/"
     assert not bs.INLINE_SCRIPT.search(out) and not bs.INLINE_STYLE.search(out)
+    # Served at /docs/ (smk762/argus-realms#10): root-absolute assets, so /docs without the slash renders the same.
+    assert '<link rel="canonical" href="https://atlas.dragonhound.dev/docs/">' in out
+    assert 'href="/docs/docs.css"' in out and 'src="/vendor/dh/dh-theme.js"' in out and '<a href="/">' in out
 
 
 def test_the_committed_docs_render_with_every_panel_link() -> None:
@@ -166,6 +169,8 @@ def test_the_committed_docs_render_with_every_panel_link() -> None:
     rendered = ad.render(record)
     links = bs.docs_links(rendered.anchors)
     assert set(links) == set(bs.DOC_LINKS)
+    assert all(href.startswith("docs/#") for href in links.values())  # from index.html at /, to /docs/
+    assert (Path(bs.ROOT) / "site" / "docs" / "docs.css").is_file()
     for doc in ad.DOCS:
         assert doc.path in record["files"]
     assert not set(record["files"]) & ad.NEVER_IMPORT
