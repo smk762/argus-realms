@@ -73,7 +73,10 @@
   .hint { font-size: var(--dh-text-2xs); color: var(--muted); margin: 6px 0 0; }
   kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: var(--dh-text-2xs); } /* the 12 px floor */
   details summary { cursor: pointer; color: var(--muted); font-size: var(--dh-text-2xs); margin-top: 8px; }
-  details p { font-size: var(--dh-text-2xs); color: var(--muted); margin-top: 6px; }
+  details p, details ol { font-size: var(--dh-text-2xs); color: var(--muted); margin-top: 6px; }
+  .steps { padding-left: 18px; margin-bottom: 0; }
+  .steps li { margin: 3px 0; }
+  .steps code { font-size: inherit; }
   a { color: var(--accent); }
   :focus-visible { outline: var(--dh-focus-ring); outline-offset: var(--dh-focus-offset); }
   .skip { position: absolute; left: 8px; top: 4px; z-index: 10; padding: 4px 10px; background: var(--dh-surface); color: var(--dh-text); border-radius: var(--dh-radius-md); }
@@ -180,14 +183,13 @@
   <p class="hint kbd-hint">Hold <kbd>space</kbd> to peek at the real map.</p>
   <button id="peek" type="button">Hold to peek</button>
 
-  <details>
+  <details id="made">
     <summary>How it was made</summary>
-    <p>Each island was baked as a block of chunks (z7 tiles for Iceland, z11 for Réunion) from Copernicus GLO-30
-      terrain and OpenStreetMap water, forest, roads and glaciers, with neighbours pasted into the margin so the seams
-      continue. GDAL fixes the coordinates before the model paints, and a job whose output moves by one pixel is
-      refused.</p>
-    <p>Each chunk is painted once at 1024 px, native two zoom levels below the opening view; every coarser zoom is
-      downsampled from that one painting, so zooming in adds detail without redrawing the map.</p>
+    <!-- Filled by app.js from tiles/areas.json: the argus-atlas commands and knobs read from this area's and style's
+         bake sidecars (job.json), each step linked to its section of docs.html. Nothing here is hard-coded. -->
+    <ol class="steps" id="made-steps"></ol>
+    <p id="made-params"></p>
+    <p id="made-build"></p>
     <p>This page replays finished bakes: no GPU runs here. The game built on these maps,
       a solo arena on an H3 hex grid, needs its server and is not part of this demo.</p>
   </details>

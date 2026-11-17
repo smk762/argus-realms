@@ -24,16 +24,21 @@ jobs:
       - run: make test
 
   # The static demo's page checks, without the painted tiles (they are baked on a GPU host and are not in git):
-  # the demo strip pasted into site/index.html matches site/vendor/dh/dh-strip.html, <html> marks Realms current,
-  # there is no inline script, and the CSP renders. The full build is `make static` with tiles in var/maps.
+  # the demo strip pasted into site/index.html matches site/vendor/dh/dh-strip.html, <html> marks Atlas current,
+  # there is no inline script, and the CSP renders; and the imported argus-atlas docs (docs/atlas/) match their
+  # record, pass the opsec gate, render, and hold every anchor the panel links to. The full build is `make static`
+  # with tiles in var/maps; it also refuses tiles baked at another argus-atlas commit than the docs.
   static:
     runs-on: ubuntu-latest
+    env:
+      # Private names the opsec gate refuses in the imported docs, kept out of git. Empty is fine.
+      OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "pillow>=10.0"
+      - run: pip install "pillow>=10.0" "markdown-it-py>=3.0,<5"
       - run: python scripts/build_static.py --check
 
   # The vendored Dragonhound shared layer (site/vendor/dh/): fails if a copy was edited here, or no longer matches
