@@ -40,7 +40,6 @@ HOST = '"$ATLAS_HOST"'
 MAPS = '"$ATLAS_MAPS"'
 # The argus-atlas build every plan bakes with: the commit the docs were imported at (scripts/atlas_docs.py).
 SYNC_RECORD = Path(__file__).resolve().parents[2] / "docs" / "atlas" / "sync.json"
-ATLAS_GIT = "https://github.com/smk762/argus-atlas.git"
 
 
 def synced_commit(record: Path = SYNC_RECORD) -> str | None:
@@ -56,13 +55,15 @@ def image_for(commit: str) -> str:
 
 
 def build_steps(commit: str) -> str:
-    """Shell lines: build the image at *commit* from a clone (hatch-vcs and the build's commit record need .git,
-    which a git-URL build context drops), so every job.json records this commit; then refuse to start without it."""
+    """Shell lines: build the image at *commit* from the host's argus-atlas checkout, so every job.json records this
+    commit; then refuse to start without it. The checkout itself, not a git worktree or a git-URL context: the build
+    reads the version and commit from .git, which a worktree's .git file points outside the build context."""
     tag, short = image_for(commit), commit[:7]
     return (
-        f"# 0. The image at argus-atlas {short}, the commit of the docs Atlas publishes (once per host):\n"
-        f"#   git clone {ATLAS_GIT} argus-atlas-{short} && cd argus-atlas-{short} && \\\n"
-        f'#   git checkout {commit} && docker build -t {tag} --build-arg EXTRAS="server,cli,tiles" .\n'
+        f"# 0. The image at argus-atlas {short}, the commit of the docs Atlas publishes (once per host), built from the\n"
+        f"#    argus-atlas checkout itself (a worktree's or a git URL's build can't read the version from .git):\n"
+        f"#   cd <argus-atlas checkout> && git fetch && git switch --detach {commit} && \\\n"
+        f'#   docker build -t {tag} --build-arg EXTRAS="server,cli,tiles" . && git switch -\n'
         f"docker image inspect {tag} >/dev/null 2>&1 || {{ echo 'build {tag} first (step 0)'; exit 1; }}\n"
     )
 
