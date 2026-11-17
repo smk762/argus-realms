@@ -23,21 +23,20 @@ The production branch of both projects is `main`. A deploy with any other `--bra
 
 | Path | Size (Nov 2026) | What it is |
 |---|---|---|
-| `var/maps/` | ~1.5 GB | argus-atlas chunk archives: `areas/<area>/<style>/<job>/` for Atlas, `<style>/<job>/` for the Cook Strait arena |
-| `var/tiles-areas/` | ~380 MB | Atlas tiles exported from `var/maps/areas` |
-| `var/tiles/` | ~130 MB | Arena tiles exported from the Cook Strait bakes |
+| `var/maps/` | ~1.5 GB | argus-atlas chunk archives, `areas/<area>/<style>/<job>/` for every area: Atlas and the arena use the same bakes |
+| `var/tiles-areas/` | ~510 MB | Tiles exported from `var/maps/areas` (`make tiles`), one folder per area; the arena's regions point here too |
 
-The bakes are the expensive part, because each chunk is a GPU painting. Copy `var/maps/` rather than re-baking whenever you can; the two tile folders can be re-exported from it on any machine.
+The bakes are the expensive part, because each chunk is a GPU painting. Copy `var/maps/` rather than re-baking whenever you can; `var/tiles-areas/` can be re-exported from it on any machine. A `var/maps/<style>/` or `var/tiles/` left from before the shared layout is no longer read.
 
 ## 3. Baking new areas or styles (GPU)
 
-Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answering on `127.0.0.1:8188` on that host. See `bakes/islands.sh` for a full plan.
+Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answering on `127.0.0.1:8188` on that host. The plans for the current areas are `bakes/cook-strait.sh`, `bakes/iceland.sh` and `bakes/reunion.sh`, all seven styles each, all with the image at the docs' commit.
 
-1. **Plan:** `python -m atlas_realms.bakeplan --name <area> --center <lat,lng> --rings <n> --zoom <z> --styles <list> --land <land.geojson>` prints the DEM, OSM and per-chunk commands. With `--land`, it skips all-sea chunks.
-2. **Run on the GPU host:** set `ATLAS_HOST` (dir holding `dem/` and `recipes/`), `ATLAS_MAPS` (output share) and `ATLAS_MODELS` (model tree). Each line skips chunks already baked, so a stopped run resumes where it left off.
+1. **Plan:** `python -m atlas_realms.bakeplan --name <area> --center <lat,lng> --rings <n> --zoom <z> --styles <list> --land <land.geojson> --area` prints the DEM, OSM and per-chunk commands. With `--land`, it skips all-sea chunks; `--tiles z/x/y,...` bakes an exact chunk list instead (the islands: Natural Earth's outline misses an islet the paintings include). Step 0 builds the image at the commit in `docs/atlas/sync.json` from a clone (the build needs `.git` to record the commit).
+2. **Run on the GPU host:** set `ATLAS_HOST` (dir holding `dem/` and `recipes/`), `ATLAS_MAPS` (output share) and `ATLAS_MODELS` (model tree). Each line skips chunks already baked, so a stopped run resumes where it left off. A re-bake at a new commit goes into a **fresh** `ATLAS_MAPS` (for example `<share>/maps-<sha7>`): `chunk` seams against any baked neighbour, so the script refuses to start beside jobs of another argus-atlas build. DEMs and OSM extracts under `ATLAS_HOST` are reused.
 3. **Schedule around other GPU work.** Run overnight or when the GPU is idle. Pause each hour from :50 to :00, when another scheduled job owns the GPU.
 4. **New styles:** a style is an argus-atlas recipe in `$ATLAS_HOST/recipes/`. The seven presets are antique, tolkien, imhof, watercolor, cyberpunk, minecraft and pixel. A new theme is a new recipe; keep `"z_factor": "auto"` and `"vertical_exaggeration": 1` as the other recipes do.
-5. **argus-atlas version:** this repo pins `argus-atlas>=0.2.0a1,<0.3`, while the bakes use the `0.3.0` image. Chunks of different reliefs or versions can't be neighbours, so bake each area's styles with one version, and lift the pin if a feature needs it.
+5. **argus-atlas version:** the bakes use the image built at the docs' commit (§5); this repo's pip pin (`argus-atlas>=0.2.0a1,<0.3`, for chunk addressing in the game) is separate. Chunks of different reliefs or builds can't be neighbours, so every area and style is baked with one build.
 
 ## 4. Adding an area to Atlas
 
@@ -47,9 +46,9 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 4. `make sea-masks` remakes `data/masks/` from the OpenFreeMap ocean, so painted sea only shows near the coast.
 5. Choose neutral, well-known places: islands, straits, mountain ranges. Don't put demo data anywhere that ties the project to a person.
 
-**Adding a region to the Realms arena** (the same bakes serve both):
+**Adding a region to the Realms arena** (the same bakes serve both: every arena region is also an Atlas area, Cook Strait and Iceland today):
 1. Make its outline with `scripts/land_outline.py` (see `data/README.md`). Check `bakeplan --land` reports about 50 or more land hexes at res 5; smaller islands don't make a game.
-2. Bake it with `--area`, then export it as for Atlas, into `var/tiles-areas/<area>`.
+2. Bake it with `--area` and add it to Atlas's `AREAS`, then export it with `make tiles` into `var/tiles-areas/<area>`.
 3. Commit `arena/world/<area>.json` (the export's `manifest.json`: styles, ready chunks, zooms, bounds) and add the region to `arena/regions.json`, with two spawn points on land.
 4. `make arena-test` checks that it plays the same in Pyodide and CPython; `make arena` paints it.
 

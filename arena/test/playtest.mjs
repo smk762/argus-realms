@@ -1,7 +1,7 @@
 // A scripted play-test of the built arena in Chromium (local only; CI runs the parity test instead):
 // start a game, move, let the bots act, check that territory, coins and battles change, reload and check the save.
 //
-//   python3 build.py [--tiles ../var/tiles] && node scripts/serve.mjs dist &
+//   python3 build.py [--tiles] && node scripts/serve.mjs dist &
 //   node test/playtest.mjs [http://127.0.0.1:8120/] [screenshot dir]
 //
 // CHROME=<path> uses an installed Chromium instead of Playwright's own.

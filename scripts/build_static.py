@@ -54,6 +54,9 @@ INLINE_SCRIPT = re.compile(r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S
 AREAS = [
     {"id": "iceland", "label": "Iceland", "frame": [-24.55, 63.39, -13.49, 66.57]},
     {"id": "reunion", "label": "Réunion", "frame": [55.22, -21.38, 55.86, -20.86]},
+    # The Realms arena's default map, from the same bakes (areas/cook-strait). Not an island: the frame is its land
+    # chunks' extent, Marlborough Sounds to the Wairarapa.
+    {"id": "cook-strait", "label": "Cook Strait", "frame": [173.67, -42.3, 176.14, -40.44]},
 ]
 ATTRIBUTION = (
     'Painted by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a> from '

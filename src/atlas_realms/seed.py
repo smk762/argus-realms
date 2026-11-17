@@ -1,6 +1,6 @@
 """Seed the world from an exported tile manifest and a land outline.
 
-    python -m atlas_realms.seed var/tiles/manifest.json data/nz_mainland.geojson \
+    python -m atlas_realms.seed var/tiles-areas/cook-strait/manifest.json data/nz_mainland.geojson \
         --spawn=-41.2865,174.7762 --spawn=-41.2906,174.0010
 
 Every hex touching a ready chunk is created. It is playable once all the chunks its outline touches

@@ -39,9 +39,9 @@ features go into argus-atlas; anything game-specific stays here. argus-atlas's o
 `src/atlas_realms/bakeplan.py` — `python -m atlas_realms.bakeplan` prints a bash script of argus-atlas commands for a
 block of chunks (`dem` for one GLO-30 GeoTIFF, one Overpass call for the controls and one for place names, recipes,
 `chunk` per tile per style in north-to-south, west-to-east order, then `labels --job` on the first style's chunks).
-It needs argus-atlas past 0.2.0a1 (`ATLAS_REF`, an image built from that commit); the pip pin stays on the release. The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
-`$ATLAS_HOST/recipes`, the model tree at `$ATLAS_MODELS`, finished chunks at `$ATLAS_MAPS/<style>/<style>-<z>-<x>-<y>/`
-(one dir per style is also what argus-atlas seams against). Generated plans are committed under `bakes/` and run on
+It bakes with an image built at the argus-atlas commit in `docs/atlas/sync.json` (the docs Atlas publishes; step 0 builds it from a clone, refuses to start without it, and refuses to bake beside jobs of another build); the pip pin stays on the release. `--tiles` takes an exact chunk list instead of a block. The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
+`$ATLAS_HOST/recipes`, the model tree at `$ATLAS_MODELS`, finished chunks at `$ATLAS_MAPS/areas/<area>/<style>/<style>-<z>-<x>-<y>/`
+(one dir per style is also what argus-atlas seams against). Atlas and the arena paint from the same bakes and exports (`var/tiles-areas/<area>`). Generated plans are committed under `bakes/` and run on
 the GPU host. Never commit host-specific paths, host names or LAN addresses.
 `data/` holds the region outlines (see `data/README.md`). The starting region is New Zealand (Cook Strait 7×7 block, H3 res 5).
 
@@ -85,7 +85,7 @@ Solo arena (the first playable mode; PvP on the shared Postgres world comes late
 - `solo.py` — `Session` (hex cap = claimable land / players × `cap_share`, set in `Session.new`; everyone starts
   with `start_coins`; it ticks `PACE` (1.5×) faster than its speed setting): an in-memory World built from the tile manifest + outline, lazy catch-up ticking, `state()`.
 - `api.py` — FastAPI: `/api/manifest`, `/api/meta`, `/api/solo/...`, static `/tiles` and `web/`.
-- `tiles.py` — exports `<maps>/<style>/<job>/fantasy.pmtiles` to static `<style>/<z>/<x>/<y>.png` + `manifest.json`,
+- `tiles.py` — exports `<maps>/areas/<area>/<style>/<job>/fantasy.pmtiles` (one area at a time, `make tiles`) to static `<style>/<z>/<x>/<y>.png` + `manifest.json`,
   and merges the chunks' `labels.geojson` (argus-atlas place names) into one `labels.geojson` the client draws.
 - `seed.py` — hexes from a manifest + outline (`plan_hexes`), into Postgres or (via `solo.build_world`) memory.
 - `web/` — the MapLibre client, no build step (`index.html`, `app.js`, `style.css`).
@@ -123,7 +123,7 @@ make sim
 make db-up     # compose database on 127.0.0.1:5433
 make tick      # one tick against the database (LOOP=1 keeps ticking)
 make test-db   # adds the DB tests, which SKIP unless ATLAS_REALMS_TEST_DSN is set
-make preview   # export var/maps -> var/tiles and serve the solo arena on http://127.0.0.1:8110
+make preview   # export var/maps/areas -> var/tiles-areas and serve the solo arena on http://127.0.0.1:8110
 ```
 
 ## Conventions

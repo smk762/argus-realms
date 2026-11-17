@@ -51,16 +51,17 @@ tick:  ## Run one game tick against $$ATLAS_REALMS_DSN (LOOP=1 to keep ticking)
 
 MAPS ?= var/maps
 
-tiles:  ## Export baked chunks ($$MAPS/<style>/<job>/fantasy.pmtiles) to var/tiles
-	$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS) var/tiles
+tiles:  ## Export every area's chunks ($$MAPS/areas/<area>/<style>/<job>) to var/tiles-areas/<area>: Atlas and the arena
+	$(foreach a,$(AREAS),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5) &&) true
 
-AREAS ?= iceland reunion
+# Atlas's areas; the arena's regions (arena/regions.json) are a subset, painted from the same exports.
+AREAS ?= iceland reunion cook-strait
 # Overview tiles go one level below each area's chunk zoom (Iceland z7, Reunion z11).
 OVERVIEW_MIN_iceland ?= 6
 OVERVIEW_MIN_reunion ?= 10
+OVERVIEW_MIN_cook-strait ?= 9
 
-static:  ## Static map demo (no game, areas in $$MAPS/areas/<area>/<style>/<job>) in dist/static, e.g. for Cloudflare Pages
-	$(foreach a,$(AREAS),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5) &&) true
+static: tiles  ## Static map demo (no game, areas in $$MAPS/areas/<area>/<style>/<job>) in dist/static, e.g. for Cloudflare Pages
 	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static
 
 sea-masks: static  ## Remake data/masks (where painted sea may show) from the OpenFreeMap ocean, then rebuild dist/static
@@ -68,12 +69,12 @@ sea-masks: static  ## Remake data/masks (where painted sea may show) from the Op
 	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static
 
 preview: tiles  ## Solo arena in the browser at http://127.0.0.1:8110
-	$(UV) run --no-sync python -m atlas_realms.api --tiles var/tiles --port 8110
+	$(UV) run --no-sync python -m atlas_realms.api --tiles var/tiles-areas/cook-strait --port 8110
 
 # The browser arena (arena/): the solo game in Pyodide, a static site, one map per region in arena/regions.json.
-# TILES=1 (the default when var/tiles or var/tiles-areas exists) paints each region from its `tiles` export; a region
+# TILES=1 (the default when var/tiles-areas exists) paints each region from its `tiles` export; a region
 # without one gets a placeholder basemap. Needs `npm ci` in arena/ once.
-TILES ?= $(if $(wildcard var/tiles var/tiles-areas),1,)
+TILES ?= $(if $(wildcard var/tiles-areas),1,)
 
 arena:  ## Build the browser arena into arena/dist (each region's painted tiles unless TILES=)
 	$(UV) run --no-sync python arena/build.py $(if $(TILES),--tiles,)

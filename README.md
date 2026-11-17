@@ -2,18 +2,18 @@
 
 <!-- Live demo: https://atlas.dragonhound.dev -->
 
-Real islands painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. There are two hosted demos. **Atlas**, at **[atlas.dragonhound.dev](https://atlas.dragonhound.dev)**, shows the painted maps. **Realms**, at **[realms.dragonhound.dev](https://realms.dragonhound.dev)**, is the solo arena of the minigame, running in your browser.
+Real coasts painted as fantasy maps by [argus-atlas](https://github.com/smk762/argus-atlas), draped over a real basemap. It's the standalone demo for argus-atlas. There are two hosted demos. **Atlas**, at **[atlas.dragonhound.dev](https://atlas.dragonhound.dev)**, shows the painted maps. **Realms**, at **[realms.dragonhound.dev](https://realms.dragonhound.dev)**, is the solo arena of the minigame, running in your browser.
 
 The repo holds two things:
 
-- **Atlas, the map demo** (`site/`), a fully static page served at atlas.dragonhound.dev. Iceland and Réunion are each painted in all seven argus-atlas styles (antique, tolkien, imhof, watercolor, cyberpunk, minecraft, pixel), with OpenStreetMap place names on top. An opacity slider fades the painting into the basemap, which shows that the coastlines stay put.
+- **Atlas, the map demo** (`site/`), a fully static page served at atlas.dragonhound.dev. Cook Strait, Iceland and Réunion are each painted in all seven argus-atlas styles (antique, tolkien, imhof, watercolor, cyberpunk, minecraft, pixel), with OpenStreetMap place names on top. An opacity slider fades the painting into the basemap, which shows that the coastlines stay put.
 - **Realms, the minigame** (`src/atlas_realms/`, `web/`), a work-in-progress territory game played on the same painted maps. The solo arena runs fully in the browser at realms.dragonhound.dev. The shared world needs its own server and isn't hosted yet. See [The minigame](#the-minigame).
 
 ## What the demo shows
 
-- **Seven styles per island.** One painting per chunk serves both the base view and the zoom-in. Coarser tiles are downsampled from it, so zoom levels can't drift apart.
+- **Seven styles per area.** One painting per chunk serves both the base view and the zoom-in. Coarser tiles are downsampled from it, so zoom levels can't drift apart.
 - **Seams that line up.** Each chunk is baked with its already-painted west and north neighbours pasted into the margin, so the joins between chunks don't show.
-- **Painted land, real sea.** A sea mask made from the basemap's ocean fades the painting out within a few kilometres of the coast, so only the islands look painted.
+- **Painted land, real sea.** A sea mask made from the basemap's ocean fades the painting out within a few kilometres of the coast, so only the land looks painted.
 - **Place names** from OpenStreetMap, which argus-atlas's `labels` step positions for each chunk.
 
 ## How it works
@@ -21,11 +21,11 @@ The repo holds two things:
 ```
 GPU host                                   this repo                                      any static host
 argus-atlas chunk + labels ──▶ fantasy.pmtiles ──▶ atlas_realms.tiles ──▶ build_static.py ──▶ dist/static/
-(bakes/islands.sh)             labels.geojson      XYZ PNG tiles, manifest  site/, tiles, _headers
+(bakes/<area>.sh)              labels.geojson      XYZ PNG tiles, manifest  site/, tiles, _headers
 ```
 
-1. **Bake.** `bakes/islands.sh` runs the argus-atlas Docker image on a GPU host with ComfyUI: DEM, OSM extract, then one `chunk` per tile per style, then `labels`. Host paths come from `ATLAS_HOST`, `ATLAS_MAPS` and `ATLAS_MODELS`. `python -m atlas_realms.bakeplan` generates plans like it.
-2. **Export.** `python -m atlas_realms.tiles` turns each style's chunk archives into static `<style>/<z>/<x>/<y>.png` tiles plus a `manifest.json`, and merges the chunks' place names into one `labels.geojson`.
+1. **Bake.** `bakes/<area>.sh` (cook-strait, iceland, reunion) runs an argus-atlas image built at the docs' commit on a GPU host with ComfyUI: DEM, OSM extract, then one `chunk` per tile per style, then `labels`, into `$ATLAS_MAPS/areas/<area>/`. Atlas and the arena paint from these same bakes. Host paths come from `ATLAS_HOST`, `ATLAS_MAPS` and `ATLAS_MODELS`. `python -m atlas_realms.bakeplan` generates the plans.
+2. **Export.** `make tiles` (`python -m atlas_realms.tiles` per area, into `var/tiles-areas/<area>`) turns each style's chunk archives into static `<style>/<z>/<x>/<y>.png` tiles plus a `manifest.json`, and merges the chunks' place names into one `labels.geojson`.
 3. **Build.** `scripts/build_static.py` copies `site/` and the tiles into `dist/static/`. It writes `tiles/areas.json` for the area switcher, renders the `og.jpg` card from the tiles, and writes a `_headers` file with a CSP that hashes the page's inline styles. It also checks the Cloudflare Pages limits (25 MiB per file, 20,000 files).
 
 The page is plain HTML and JavaScript (`site/index.html`, `site/app.js`) with no build step of its own. MapLibre GL comes from cdnjs, pinned with SRI. The basemap, glyphs and vector tiles come from [OpenFreeMap](https://openfreemap.org/).
@@ -66,11 +66,11 @@ What's here:
 - **The solo arena**, playable in the browser (`web/`, served by `atlas_realms.api`): you against eight bots around Cook Strait, New Zealand. Each bot has its own personality, carries a bounty and grows stronger with each kill.
 - A Postgres 16 + PostGIS + h3-pg schema and migrations for the shared world. PvP accounts aren't built yet.
 
-The arena needs its server and the Cook Strait tiles from `bakes/cook-strait.sh`:
+The arena needs its server and the Cook Strait tiles from `bakes/cook-strait.sh`, exported by `make tiles`:
 
 ```bash
 make install
-make preview         # export var/maps -> var/tiles, serve the solo arena on http://127.0.0.1:8110
+make preview         # export var/maps/areas -> var/tiles-areas, serve the solo arena on http://127.0.0.1:8110
 ```
 
 **In the browser, no server** (`arena/`): the same solo arena as a static site. Pyodide runs the Python rules, engine
@@ -79,7 +79,7 @@ CPython tick for tick. See [arena/DESIGN.md](arena/DESIGN.md).
 
 ```bash
 npm ci --prefix arena
-make arena-dev       # build arena/dist (painted tiles from var/tiles if present) and serve it on http://127.0.0.1:8120
+make arena-dev       # build arena/dist (painted tiles from var/tiles-areas if present) and serve it on http://127.0.0.1:8120
 make arena-test      # the parity test
 ```
 
