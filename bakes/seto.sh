@@ -6,9 +6,10 @@
 set -euo pipefail
 : "${ATLAS_HOST:?}" "${ATLAS_MAPS:?}" "${ATLAS_MODELS:?}"
 
-# 0. The image at argus-atlas e3f2779, the commit of the docs Atlas publishes (once per host):
-#   git clone https://github.com/smk762/argus-atlas.git argus-atlas-e3f2779 && cd argus-atlas-e3f2779 && \
-#   git checkout e3f27791bc0b276428111a90dcbd2a95c01975b9 && docker build -t argus-atlas:e3f2779 --build-arg EXTRAS="server,cli,tiles" .
+# 0. The image at argus-atlas e3f2779, the commit of the docs Atlas publishes (once per host), built from the
+#    argus-atlas checkout itself (a worktree's or a git URL's build can't read the version from .git):
+#   cd <argus-atlas checkout> && git fetch && git switch --detach e3f27791bc0b276428111a90dcbd2a95c01975b9 && \
+#   docker build -t argus-atlas:e3f2779 --build-arg EXTRAS="server,cli,tiles" . && git switch -
 docker image inspect argus-atlas:e3f2779 >/dev/null 2>&1 || { echo 'build argus-atlas:e3f2779 first (step 0)'; exit 1; }
 # Chunks of another argus-atlas build here would be seamed against: re-bake into a fresh ATLAS_MAPS.
 foreign=$(grep -L e3f27791bc0b276428111a90dcbd2a95c01975b9 "$ATLAS_MAPS"/areas/seto/*/*/job.json 2>/dev/null || true)

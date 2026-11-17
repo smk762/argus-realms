@@ -72,7 +72,8 @@ def test_the_default_build_is_the_docs_commit():
     with redirect_stdout(buf):
         main(["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--land", str(NZ), "--area"])
     script = buf.getvalue()
-    assert f"git checkout {commit} && docker build -t argus-atlas:{commit[:7]}" in script
+    assert f"git switch --detach {commit} && \\\n#   docker build -t argus-atlas:{commit[:7]}" in script
+    assert "git clone" not in script  # built from the host's checkout, not a clone
     assert f"docker image inspect argus-atlas:{commit[:7]}" in script
     assert f"-v $ATLAS_MAPS:/data/out/atlas argus-atlas:{commit[:7]}" in script
     assert script.index("docker image inspect") < script.index("argus-atlas dem")
