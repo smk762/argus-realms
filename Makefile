@@ -2,7 +2,7 @@ UV ?= uv
 
 TEST_DSN ?= postgresql://atlas:atlas@127.0.0.1:5433/postgres
 
-.PHONY: help install lint format test test-db check static-check sim db-up db-down migrate tick tiles static sea-masks preview clean \
+.PHONY: help install lint format test test-db check static-check atlas-docs sim db-up db-down migrate tick tiles static sea-masks preview clean \
 	arena arena-check arena-test arena-dev arena-tiles-test
 
 help:  ## Show this help
@@ -26,7 +26,12 @@ test:  ## Run the test suite
 test-db:  ## Run the suite including schema tests against the compose database
 	ATLAS_REALMS_TEST_DSN=$(TEST_DSN) $(UV) run --no-sync pytest --tb=short -q
 
-static-check:  ## Check site/ without tiles: pasted strip, marker, no inline scripts, CSP; and the vendored shared layer
+ATLAS_DIR ?= ../argus-atlas
+ATLAS_REF ?= origin/dev
+atlas-docs:  ## Import the argus-atlas docs (docs/atlas/) at ATLAS_REF from the checkout in ATLAS_DIR: with the re-bake
+	$(UV) run --no-sync python scripts/atlas_docs.py import --atlas $(ATLAS_DIR) --ref $(ATLAS_REF)
+
+static-check:  ## Check site/ without tiles (strip, marker, no inline scripts, CSP, imported atlas docs); and the shared layer
 	$(UV) run --no-sync python scripts/build_static.py --check
 	node site/vendor/dh/sync-shared.mjs --check .
 

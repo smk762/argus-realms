@@ -216,6 +216,7 @@
     $("styles").replaceChildren(...area.styles.map((name) => {
       const b = document.createElement("button");
       b.type = "button"; b.textContent = name; b.dataset.style = name;
+      b.title = recipeOf(area, name);
       b.onclick = () => choose(name);
       return b;
     }));
@@ -241,8 +242,66 @@
     const v = peeking ? 0 : Number($("opacity").value) / 100;
     for (const id of layers) map.setPaintProperty(id, "raster-opacity", v);
   }
+  // "How it was made": the commands and knobs behind the shown style, read by the build from its chunks' job.json
+  // (areas.json `bake`), each command linked to its section of docs.html (`docs`, anchors checked by the build).
+  const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), attrs, text == null ? {} : { textContent: text });
+  const several = (v) => (v || []).join(" / ");
+  function recipeOf(a, name) {
+    const b = (a.bake || {})[name];
+    if (!b || !b.recipe?.length) return "";
+    const preset = several(b.preset);
+    return `Recipe ${several(b.recipe)}` + (preset && preset !== several(b.recipe) ? `, preset ${preset}` : "");
+  }
+  function step(a, cmd, text, href, extra) {
+    const li = el("li");
+    const link = el("a", null, { href });
+    link.append(el("code", `argus-atlas ${cmd}`));
+    li.append(link, ` ${text}`);
+    if (extra) li.append(...extra);
+    return li;
+  }
+  function explain(a, name) {
+    const b = (a.bake || {})[name], d = a.docs || {};
+    const steps = [], params = $("made-params"), build = $("made-build");
+    if (!b || !b.chunks) {
+      $("made-steps").replaceChildren();
+      params.textContent = "This style's tiles carry no bake record.";
+      build.replaceChildren();
+      return;
+    }
+    const cmds = new Set(b.commands);
+    if (cmds.has("dem")) steps.push(step(a, "dem", "fetched the Copernicus GLO-30 terrain.", d.dem));
+    if (cmds.has("osm")) steps.push(step(a, "osm", "fetched the OpenStreetMap layers it was painted from.", d.osm));
+    const c = b.chunk || {};
+    const one = b.chunks === 1;
+    steps.push(step(a, "chunk", `painted ${one ? "one chunk" : `${b.chunks} chunks`} (z${several(c.zoom)} tiles, ` +
+      `${several(c.size)} px plus a ${several(c.margin)} px margin)${one ? "" : ", each with its baked neighbours in view,"} and `,
+      d.chunk, [el("a", b.aligned ? `the alignment gate passed ${one ? "it" : "every one"}` : "the alignment gate", { href: d.gate }), "."]));
+    if (cmds.has("labels")) steps.push(step(a, "labels", "added the place names, drawn on top in a real font.", d.labels));
+    steps.push(el("li", "This site's export joined the chunks into one tile tree, with coarser zooms shrunk from them."));
+    $("made-steps").replaceChildren(...steps);
+
+    const seeds = b.seeds ? (b.seeds[0] === b.seeds[1] ? `seed ${b.seeds[0]}` : `seeds ${b.seeds[0]}–${b.seeds[1]}, one per chunk`) : "";
+    const knobs = [
+      recipeOf(a, name),
+      several(b.checkpoint) + (b.lora?.length ? ` + ${several(b.lora)}` : ", no LoRA"),
+      `denoise ${several(b.denoise)}`, `${several(b.steps)} steps`, `cfg ${several(b.cfg)}`, seeds,
+    ].filter(Boolean);
+    params.textContent = knobs.join(", ") + ".";
+
+    const built = (b.atlas || []).filter((g) => g.commit);
+    build.replaceChildren();
+    if (built.length) {
+      build.append(`Baked with argus-atlas ${built.map((g) => `${g.version} (${g.commit.slice(0, 7)})`).join(", ")}: `,
+        el("a", "read its docs", { href: d.overview }), ".");
+    } else {
+      build.append("Baked with an argus-atlas build that recorded no version. ", el("a", "The argus-atlas docs", { href: d.overview }), ".");
+    }
+  }
+
   function choose(name) {
     chosen = name;
+    explain(area, name);
     store.set("style", name);
     addStyle(area, name);
     for (const id of layers) map.setLayoutProperty(id, "visibility", id === `paint-${area.id}-${name}` ? "visible" : "none");

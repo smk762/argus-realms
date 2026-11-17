@@ -1,0 +1,31 @@
+{
+ "atlas": {
+  "repo": "smk762/argus-atlas",
+  "commit": "da3682de199845e95ea04e78115a93ebc9b72ae0",
+  "version": "0.3.1.dev41+gda3682d",
+  "ref": "origin/dev"
+ },
+ "imported_at": "2026-11-17T15:58:04+00:00",
+ "files": {
+  "README.md": {
+   "as": "overview.md",
+   "sha256": "31dff7e0fbedb3a12a097538d799bf84545986a5bd506f128ccd1c39533e7002"
+  },
+  "docs/chunks-and-mosaic.md": {
+   "as": "chunks-and-mosaic.md",
+   "sha256": "447713a4ec1b18ebca1bfd4ec3ddbd596edc6b12cadaccc659825b5ecd837fb5"
+  },
+  "docs/alignment-gate.md": {
+   "as": "alignment-gate.md",
+   "sha256": "cbdf64370d5377499130d7f70fc34a55c87caa0973bff03755baff6a45815aed"
+  },
+  "docs/cli.md": {
+   "as": "cli.md",
+   "sha256": "feca138cd61ae8b97c1c9db5bda1ef2b05db63ef41e6e64a5337108d8e590457"
+  },
+  "docs/img/hero-cook-strait.jpg": {
+   "as": "img/hero-cook-strait.jpg",
+   "sha256": "b86524bf6946bc4f5297c0d375528e24bf100890e552ef4829fcf97fb6e4705a"
+  }
+ }
+}

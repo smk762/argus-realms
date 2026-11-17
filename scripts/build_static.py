@@ -4,8 +4,10 @@
 
 Copies `site/` and each area's exported XYZ tiles (`python -m atlas_realms.tiles <maps>/areas/<area>
 var/tiles-areas/<area>`, see `make static`) into one directory any static host can serve, writes
-`tiles/areas.json` for the area switcher, renders `og.jpg` from the tiles, and checks the Cloudflare Pages
-limits (25 MiB per file, 20,000 files). Nothing here runs the game: the solo arena needs its server.
+`tiles/areas.json` for the area switcher, renders `og.jpg` from the tiles, renders the imported argus-atlas docs into
+`docs.html` (scripts/atlas_docs.py), and checks the Cloudflare Pages limits (25 MiB per file, 20,000 files). It
+refuses tiles whose bakes record another argus-atlas commit than the docs. Nothing here runs the game: the solo arena
+needs its server.
 """
 
 import argparse
@@ -19,6 +21,8 @@ import sys
 from pathlib import Path
 
 from PIL import Image
+
+import atlas_docs
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_FILE = 25 * 1024 * 1024
@@ -59,15 +63,52 @@ ATTRIBUTION = (
 )
 
 
+# "How it was made" deep-links each step to its section of docs.html. The build checks every anchor exists, so a
+# re-import that renames a heading fails here instead of leaving a dead link.
+DOC_LINKS = {
+    "dem": "cli-argus-atlas-dem",
+    "osm": "cli-argus-atlas-osm",
+    "chunk": "chunks-and-mosaic-one-chunk",
+    "block": "chunks-and-mosaic-a-block-of-chunks",
+    "labels": "chunks-and-mosaic-place-names",
+    "gate": "alignment-gate",
+    "cli": "cli",
+    "overview": "overview",
+}
+
+
+def docs_links(anchors: set[str]) -> dict[str, str]:
+    missing = sorted(a for a in DOC_LINKS.values() if a not in anchors)
+    if missing:
+        sys.exit(f"docs.html has no {', '.join('#' + a for a in missing)}: update DOC_LINKS after the docs import")
+    return {k: f"docs.html#{a}" for k, a in DOC_LINKS.items()}
+
+
+def docs_page() -> tuple[dict, str, dict[str, str]]:
+    """The imported argus-atlas docs: their record, docs.html (vendored stylesheets inlined) and the step links."""
+    try:
+        record = atlas_docs.load_record()
+        rendered = atlas_docs.render(record)
+    except atlas_docs.DocsError as exc:
+        sys.exit(str(exc))
+    strip = (ROOT / "site" / "vendor" / "dh" / "dh-strip.html").read_text().strip()
+    page = inline_shared_css(atlas_docs.page(record, rendered, strip))
+    if INLINE_SCRIPT.search(page):
+        sys.exit("docs.html has an inline <script>")
+    return record, page, docs_links(rendered.anchors)
+
+
 def _sha256(text: str) -> str:
     return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
 
 
-def security_headers(html: str) -> str:
-    """Response headers for every path: a CSP that hashes the page's inline <style>, plus the companion headers."""
+def security_headers(html: str, *others: str) -> str:
+    """Response headers for every path: a CSP that hashes the pages' inline <style>s (index.html, then any other page
+    such as docs.html, whose inlined vendored stylesheets hash the same), plus the companion headers."""
     if INLINE_SCRIPT.search(html):
         sys.exit("site/index.html has an inline <script>: move it into site/app.js (the CSP allows no inline scripts)")
-    styles = " ".join(_sha256(body) for body in INLINE_STYLE.findall(html))
+    hashes = [_sha256(body) for page in (html, *others) for body in INLINE_STYLE.findall(page)]
+    styles = " ".join(dict.fromkeys(hashes))
     csp = "; ".join(
         [
             "default-src 'self'",
@@ -197,10 +238,33 @@ def check_limits(out: Path) -> tuple[int, int]:
     return len(files), sum(p.stat().st_size for p in files)
 
 
+def public_bakes(manifest: dict) -> dict[str, dict | None]:
+    """Each public style's bake summary (from the export), by style name."""
+    return {st["name"]: st.get("bake") for st in manifest["styles"] if not st.get("patron_only")}
+
+
+def check_sync(tiles: Path, record: dict) -> None:
+    """The docs must be the ones of the build that baked these tiles (argus-studio#169). Checked for every area
+    before anything is written, so a refused build leaves the last good dist/ alone."""
+    builds = {}
+    for area in AREAS:
+        manifest_path = tiles / area["id"] / "manifest.json"
+        if not manifest_path.exists():
+            sys.exit(f"{manifest_path} not found: export the area's tiles first (make static)")
+        for name, b in public_bakes(json.loads(manifest_path.read_text())).items():
+            builds[f"{area['id']}/{name}"] = (b or {}).get("atlas") or [{}]
+    try:
+        atlas_docs.check_bakes(record, builds)
+    except atlas_docs.DocsError as exc:
+        sys.exit(str(exc))
+
+
 def build(tiles: Path, out: Path) -> None:
+    check_strip((ROOT / "site" / "index.html").read_text())
+    record, docs_html, links = docs_page()
+    check_sync(tiles, record)
     if out.exists():
         shutil.rmtree(out)
-    check_strip((ROOT / "site" / "index.html").read_text())
     shutil.copytree(
         ROOT / "site", out, ignore=lambda d, names: [n for n in names if d.endswith("dh") and n in SHARED_SKIP]
     )
@@ -211,7 +275,8 @@ def build(tiles: Path, out: Path) -> None:
         if not manifest_path.exists():
             sys.exit(f"{manifest_path} not found: export the area's tiles first (make static)")
         manifest = json.loads(manifest_path.read_text())
-        public = [st["name"] for st in manifest["styles"] if not st.get("patron_only")]
+        bakes = public_bakes(manifest)
+        public = list(bakes)
         for name in public:
             shutil.copytree(src / name, out / "tiles" / area["id"] / name)
             # The block is not a rectangle of land: list the tiles that exist so the page asks for no others.
@@ -236,6 +301,10 @@ def build(tiles: Path, out: Path) -> None:
                 # Cache-busting key for the tile tree (see site/app.js): changes with every export.
                 "version": manifest["generated_at"],
                 "attribution": ATTRIBUTION,
+                # How each style was painted (from its chunks' job.json) and where each step is documented.
+                "bake": bakes,
+                "atlas": {k: record["atlas"][k] for k in ("version", "commit")},
+                "docs": links,
             }
         )
     (out / "tiles" / "areas.json").write_text(json.dumps(listing, indent=1, ensure_ascii=False))
@@ -243,7 +312,12 @@ def build(tiles: Path, out: Path) -> None:
     (out / "404.html").write_text("<!doctype html><title>Not found</title><p>Not found.</p>\n")
     page = inline_shared_css((ROOT / "site" / "index.html").read_text())
     (out / "index.html").write_text(page)
-    (out / "_headers").write_text(HEADERS + security_headers(page))
+    (out / "docs.html").write_text(docs_html)
+    (out / atlas_docs.IMG_DIR).mkdir()
+    for entry in record["files"].values():
+        if entry["as"].startswith("img/"):
+            shutil.copy2(atlas_docs.VENDOR / entry["as"], out / atlas_docs.IMG_DIR / Path(entry["as"]).name)
+    (out / "_headers").write_text(HEADERS + security_headers(page, docs_html))
     first = listing[0]
     render_og(tiles / first["id"], first["styles"][0], first["frame"], out / "og.jpg", z=first["chunk_zoom"] + 1)
     count, size = check_limits(out)
@@ -257,8 +331,14 @@ def check() -> None:
     page = inline_shared_css(html)
     if SHARED_LINK.search(page):
         sys.exit("site/index.html: a vendored stylesheet link was not inlined")
-    security_headers(page)
-    print("site/: strip, marker, inline styles and CSP ok")
+    record, docs_html, _ = docs_page()
+    if SHARED_LINK.search(docs_html):
+        sys.exit("docs.html: a vendored stylesheet link was not inlined")
+    # docs.html adds no inline style of its own: the same hashes as index.html, so the CSP is unchanged by it.
+    if security_headers(page, docs_html) != security_headers(page):
+        sys.exit("docs.html adds an inline <style> index.html doesn't have: put it in site/docs.css")
+    a = record["atlas"]
+    print(f"site/: strip, marker, inline styles and CSP ok; argus-atlas docs {a['version']} at {a['commit'][:7]} ok")
 
 
 def main() -> None:
@@ -268,7 +348,8 @@ def main() -> None:
     p.add_argument(
         "--check",
         action="store_true",
-        help="Only check site/ (pasted strip, <html> marker, no inline scripts, CSP renders); needs no tiles. For CI.",
+        help="Only check site/ (pasted strip, <html> marker, no inline scripts, CSP renders) and the imported "
+        "argus-atlas docs (record, opsec, render, anchors); needs no tiles. For CI.",
     )
     a = p.parse_args()
     if a.check:

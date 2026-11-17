@@ -53,7 +53,17 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 3. Commit `arena/world/<area>.json` (the export's `manifest.json`: styles, ready chunks, zooms, bounds) and add the region to `arena/regions.json`, with two spawn points on land.
 4. `make arena-test` checks that it plays the same in Pyodide and CPython; `make arena` paints it.
 
-## 5. Build and deploy
+## 5. The argus-atlas docs and the sync rule
+
+Atlas publishes the argus-atlas docs at `/docs.html`, and "How it was made" links each step there. The docs, the tiles and the argus-atlas version must agree at argus-atlas `dev` HEAD (argus-studio#169):
+
+- `docs/atlas/` holds the imported docs (the README as the overview, chunks and mosaic, the alignment gate, the CLI reference) and `sync.json`: the argus-atlas commit and version, and a SHA256 per file. Never edit those files; re-import them.
+- `make atlas-docs` (`ATLAS_DIR=<argus-atlas checkout>`, `ATLAS_REF=origin/dev` by default) imports them at a commit. It reads with `git show`, so the checkout's working tree doesn't matter, and it refuses a doc that fails the opsec gate (private addresses, home paths, emails, host names, `OPSEC_DENYLIST`). `docs/your-first-bake.md` is never imported.
+- `make static` refuses tiles whose bakes record another argus-atlas commit than `sync.json`, and tiles from a build before 0.4, which recorded none. It checks this before touching `dist/static`, so a refused build leaves the last good one in place. Re-bake with an image built at the docs' commit, or import the docs at the bakes' commit, and commit both together.
+- The `argus-atlas drift` workflow runs daily and opens an issue (or comments on the open one) when argus-atlas `dev` moves past `sync.json`.
+- `make static-check` (CI) checks the import offline: the record, the opsec gate, the render, and every anchor the panel links to.
+
+## 6. Build and deploy
 
 **Credentials:** Wrangler reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment. Keep them in a file outside the repo, mode 600, and load it with `set -a; . <file>; set +a`. Never commit them or print them in logs.
 
@@ -75,7 +85,7 @@ npx wrangler@4 pages deploy arena/dist --project-name=argus-realms --branch=main
 - Open the site with the browser console open: no errors, and no failed tile requests.
 - Check the phone layout at 390 px.
 
-## 6. Cloudflare Pages limits
+## 7. Cloudflare Pages limits
 
 - **No range requests.** Pages doesn't serve HTTP range requests on `*.pages.dev`, and a custom domain serves them only for cached file types. Tiles must stay as `z/x/y` image folders; a PMTiles archive read in ranges fails live.
 - **File count and size.** A deployment holds at most **20,000 files**, each at most **25 MiB**. `build_static.py` checks both.
