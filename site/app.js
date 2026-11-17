@@ -216,7 +216,7 @@
     $("styles").replaceChildren(...area.styles.map((name) => {
       const b = document.createElement("button");
       b.type = "button"; b.textContent = name; b.dataset.style = name;
-      b.title = recipeOf(area, name);
+      b.title = styleTip(area, name);
       b.onclick = () => choose(name);
       return b;
     }));
@@ -243,7 +243,7 @@
     for (const id of layers) map.setPaintProperty(id, "raster-opacity", v);
   }
   // "How it was made": the commands and knobs behind the shown style, read by the build from its chunks' job.json
-  // (areas.json `bake`), each command linked to its section of docs.html (`docs`, anchors checked by the build).
+  // (areas.json `bake`), each command linked to its section of the docs page, /docs/ (`docs`, anchors checked by the build).
   const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), attrs, text == null ? {} : { textContent: text });
   const several = (v) => (v || []).join(" / ");
   function recipeOf(a, name) {
@@ -251,6 +251,12 @@
     if (!b || !b.recipe?.length) return "";
     const preset = several(b.preset);
     return `Recipe ${several(b.recipe)}` + (preset && preset !== several(b.recipe) ? `, preset ${preset}` : "");
+  }
+  // The style button's tooltip: the recipe and preset, and the LoRA (or none), that painted it.
+  function styleTip(a, name) {
+    const b = (a.bake || {})[name];
+    if (!b || !b.recipe?.length) return "";
+    return `${recipeOf(a, name)}, preset ${several(b.preset) || "none"}, ${b.lora?.length ? `LoRA ${several(b.lora)}` : "no LoRA"}`;
   }
   function step(a, cmd, text, href, extra) {
     const li = el("li");
@@ -302,6 +308,7 @@
   function choose(name) {
     chosen = name;
     explain(area, name);
+    if (area.docs?.gate) $("fade-docs").href = area.docs.gate;
     store.set("style", name);
     addStyle(area, name);
     for (const id of layers) map.setLayoutProperty(id, "visibility", id === `paint-${area.id}-${name}` ? "visible" : "none");

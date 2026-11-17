@@ -169,7 +169,7 @@
     <button id="panel-toggle" type="button" aria-expanded="false" aria-controls="panel-more">More</button>
   </div>
   <p class="lede">Real islands as fantasy maps by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a>.<span
-    class="lede-more"> Each is laid over a real basemap: fade it out and the coastlines and ridges stay where they are.</span></p>
+    class="lede-more"> Each is laid over a real basemap: fade it out and the coastlines stay where they are.</span></p>
 
   <p class="head pick" id="area-label">Area</p>
   <div class="styles" id="areas" role="group" aria-labelledby="area-label"></div>
@@ -181,12 +181,15 @@
   <p class="head"><label for="opacity">Painted map</label> <span id="opval">85%</span></p>
   <input id="opacity" type="range" min="0" max="100" value="85" aria-valuetext="85%">
   <p class="hint kbd-hint">Hold <kbd>space</kbd> to peek at the real map.</p>
+  <p class="hint" id="fade-hint">Fading the paint shows the real map under it (OpenFreeMap): the coastlines, lakes and
+    roads line up because the grid was fixed before the model painted (<a id="fade-docs" href="docs/">the alignment
+    gate</a>). The relief is in the paint itself: the model painted over a hillshade of the Copernicus DEM.</p>
   <button id="peek" type="button">Hold to peek</button>
 
   <details id="made">
     <summary>How it was made</summary>
     <!-- Filled by app.js from tiles/areas.json: the argus-atlas commands and knobs read from this area's and style's
-         bake sidecars (job.json), each step linked to its section of docs.html. Nothing here is hard-coded. -->
+         bake sidecars (job.json), each step linked to its section of the docs page (/docs/). Nothing here is hard-coded. -->
     <ol class="steps" id="made-steps"></ol>
     <p id="made-params"></p>
     <p id="made-build"></p>

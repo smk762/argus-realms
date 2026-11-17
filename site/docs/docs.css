@@ -1,4 +1,4 @@
-/* docs.html: the argus-atlas docs rendered at build time (scripts/atlas_docs.py). A file, not an inline <style>, so
+/* /docs/: the argus-atlas docs rendered at build time (scripts/atlas_docs.py). A file, not an inline <style>, so
    the CSP needs no new hash. Colours and sizes come from the shared tokens (vendor/dh/dh-tokens.css), as on the map;
    text never goes below --dh-text-2xs (12 px). */
 :root { --dh-accent: #8a5a2b; --dh-on-accent: #ffffff; }
