@@ -77,11 +77,33 @@ def foreign_jobs_guard(prefix: str, commit: str) -> str:
     )
 
 
+GPU_ENV = (
+    "ARGUS_GPU_COORDINATOR",
+    "ARGUS_GPU_BROKER_URL",
+    "ARGUS_GPU_BROKER_TOKEN",
+    "ARGUS_GPU_BROKER_FALLBACK",
+    "ARGUS_GPU_LEASE_TIMEOUT_S",
+    "ATLAS_GPU_PRIORITY",
+)
+
+# ComfyUI must answer before the chunks start. Through iris it may be idle-stopped: wake it with iris's warm action
+# (on the host, so IRIS_URL is the broker as the host sees it).
+COMFYUI_CHECK = (
+    "curl -sf -m 5 http://127.0.0.1:8188/system_stats >/dev/null || {\n"
+    '  [ "${ARGUS_GPU_COORDINATOR:-}" = broker ] && curl -sf -m 180 -X POST '
+    '-H "Authorization: Bearer ${ARGUS_GPU_BROKER_TOKEN:-}" "${IRIS_URL:-http://127.0.0.1:8120}/services/comfyui/warm" '
+    ">/dev/null; } || { echo 'ComfyUI is not answering on :8188'; exit 1; }\n"
+)
+
+
 def run_line(image: str) -> str:
     return (
         'RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway '
         "-e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 "
         "-e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas "
+        # GPU leases (argus-iris): forwarded by name, so only what the host sets reaches the container and no
+        # secret is ever written into a plan. bakes/run.sh sets them for a background re-bake.
+        f"{' '.join(f'-e {name}' for name in GPU_ENV)} -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml "
         "-v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro "
         f'-v $ATLAS_MAPS:/data/out/atlas {image}"'
     )
@@ -220,9 +242,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     layer_args = " ".join(f"--layer {n}=/data/dem/osm/{a.name}/{n}.geojson" for n in a.layers.split(","))
     out("\n# 4. Chunks, one style at a time, north to south, west to east. A re-run skips chunks that have tiles.\n")
-    out(
-        "curl -sf -m 5 http://127.0.0.1:8188/system_stats >/dev/null || { echo 'ComfyUI is not answering on :8188'; exit 1; }\n"
-    )
+    out(COMFYUI_CHECK)
     for s in styles:
         out(f"mkdir -p {MAPS}/{prefix}{s}\n")
         for z, x, y in tiles:

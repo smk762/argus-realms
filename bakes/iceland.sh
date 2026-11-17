@@ -12,7 +12,7 @@ docker image inspect argus-atlas:97f867e >/dev/null 2>&1 || { echo 'build argus-
 # Chunks of another argus-atlas build here would be seamed against: re-bake into a fresh ATLAS_MAPS.
 foreign=$(grep -L 97f867e303933c229c1c98a5bc549eb1c77eb1f0 "$ATLAS_MAPS"/areas/iceland/*/*/job.json 2>/dev/null || true)
 [ -z "$foreign" ] || { echo "jobs from another argus-atlas build under $ATLAS_MAPS/areas/iceland/:"; echo "$foreign" | head -3; exit 1; }
-RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:97f867e"
+RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -e ARGUS_GPU_COORDINATOR -e ARGUS_GPU_BROKER_URL -e ARGUS_GPU_BROKER_TOKEN -e ARGUS_GPU_BROKER_FALLBACK -e ARGUS_GPU_LEASE_TIMEOUT_S -e ATLAS_GPU_PRIORITY -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:97f867e"
 
 # 1. DEM: Copernicus GLO-30 for the block plus margins, one GeoTIFF (all-sea tiles are filled with 0 m)
 [ -f "$ATLAS_HOST"/dem/iceland_glo30.tif ] || \
@@ -34,7 +34,8 @@ test -f "$ATLAS_HOST"/recipes/minecraft.json || sed 's/"antique"/"minecraft"/g' 
 test -f "$ATLAS_HOST"/recipes/pixel.json || sed 's/"antique"/"pixel"/g' "$ATLAS_HOST"/recipes/antique.json > "$ATLAS_HOST"/recipes/pixel.json
 
 # 4. Chunks, one style at a time, north to south, west to east. A re-run skips chunks that have tiles.
-curl -sf -m 5 http://127.0.0.1:8188/system_stats >/dev/null || { echo 'ComfyUI is not answering on :8188'; exit 1; }
+curl -sf -m 5 http://127.0.0.1:8188/system_stats >/dev/null || {
+  [ "${ARGUS_GPU_COORDINATOR:-}" = broker ] && curl -sf -m 180 -X POST -H "Authorization: Bearer ${ARGUS_GPU_BROKER_TOKEN:-}" "${IRIS_URL:-http://127.0.0.1:8120}/services/comfyui/warm" >/dev/null; } || { echo 'ComfyUI is not answering on :8188'; exit 1; }
 mkdir -p "$ATLAS_MAPS"/areas/iceland/antique
 [ -f "$ATLAS_MAPS"/areas/iceland/antique/antique-7-57-31/fantasy.pmtiles ] || \
   $RUN argus-atlas chunk --tile 7/57/31 --recipe antique --dem /data/dem/iceland_glo30.tif --size 1024 --margin 128 --sea-level 0 --layer water=/data/dem/osm/iceland/water.geojson --layer rivers=/data/dem/osm/iceland/rivers.geojson --layer roads=/data/dem/osm/iceland/roads.geojson --layer forest=/data/dem/osm/iceland/forest.geojson --layer urban=/data/dem/osm/iceland/urban.geojson --layer glaciers=/data/dem/osm/iceland/glaciers.geojson --out /data/out/atlas/areas/iceland/antique/antique-7-57-31

@@ -34,7 +34,14 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 
 1. **Plan:** `python -m atlas_realms.bakeplan --name <area> --center <lat,lng> --rings <n> --zoom <z> --styles <list> --land <land.geojson> --area` prints the DEM, OSM and per-chunk commands. With `--land`, it skips all-sea chunks; `--tiles z/x/y,...` bakes an exact chunk list instead (the islands: Natural Earth's outline misses an islet the paintings include). Step 0 builds the image at the commit in `docs/atlas/sync.json` from a clone (the build needs `.git` to record the commit).
 2. **Run on the GPU host:** set `ATLAS_HOST` (dir holding `dem/` and `recipes/`), `ATLAS_MAPS` (output share) and `ATLAS_MODELS` (model tree). Each line skips chunks already baked, so a stopped run resumes where it left off. A re-bake at a new commit goes into a **fresh** `ATLAS_MAPS` (for example `<share>/maps-<sha7>`): `chunk` seams against any baked neighbour, so the script refuses to start beside jobs of another argus-atlas build. DEMs and OSM extracts under `ATLAS_HOST` are reused.
-3. **Schedule around other GPU work.** Run overnight or when the GPU is idle. Pause each hour from :50 to :00, when another scheduled job owns the GPU.
+3. **Through argus-iris, at background priority.** `scripts/run_bakes.sh [area ...]` runs the plans with `ARGUS_GPU_COORDINATOR=broker` and `ATLAS_GPU_PRIORITY=background` (argus-atlas 0.4+). Each chunk takes its own lease, waits in iris's queue behind every other tenant (up to `ARGUS_GPU_LEASE_TIMEOUT_S`, a week by default), and runs on capacity nobody else wants. A plan that stops (a lease timed out, ComfyUI was idle-stopped while the chunk waited, a bake failed) is run again after `RETRY_S`, so the run resumes where it stopped. While iris is down the runner waits rather than baking ungated, and `touch $ATLAS_MAPS/STOP` ends the run after the current chunk. Start it detached on the GPU host, with the broker's caller token from the host's `.env`:
+
+   ```bash
+   ATLAS_HOST=... ATLAS_MAPS=<fresh dir> ATLAS_MODELS=... ARGUS_GPU_BROKER_TOKEN=... \
+     nohup setsid bash scripts/run_bakes.sh > run_bakes.log 2>&1 &
+   ```
+
+   Queueing needs the broker in `admission: enforce`; in `observe` iris grants every lease at once, and the runner warns. Without iris, run a plan directly (`bash bakes/<area>.sh`) when the GPU is idle.
 4. **New styles:** a style is an argus-atlas recipe in `$ATLAS_HOST/recipes/`. The seven presets are antique, tolkien, imhof, watercolor, cyberpunk, minecraft and pixel. A new theme is a new recipe; keep `"z_factor": "auto"` and `"vertical_exaggeration": 1` as the other recipes do.
 5. **argus-atlas version:** the bakes use the image built at the docs' commit (§5); this repo's pip pin (`argus-atlas>=0.2.0a1,<0.3`, for chunk addressing in the game) is separate. Chunks of different reliefs or builds can't be neighbours, so every area and style is baked with one build.
 

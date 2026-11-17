@@ -131,3 +131,18 @@ def test_every_plan_is_an_atlas_area():
     plans = {k for k in json.loads((root / "bakes" / "plans.json").read_text()) if not k.startswith("_")}
     assert plans == {p.stem for p in (root / "bakes").glob("*.sh")}
     assert plans == {a["id"] for a in build_static.AREA_INFO}  # baked or not, each has its label and frame
+
+
+def test_plans_forward_the_gpu_lease_settings_by_name():
+    """Bakes take argus-iris leases when the host sets ARGUS_GPU_*: forwarded by name, never written into a plan."""
+    from atlas_realms.bakeplan import GPU_ENV
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(["--name", "t", "--center=-41.29,174.78", "--rings", "1", "--land", str(NZ), "--area"])
+    script = buf.getvalue()
+    run = next(line for line in script.splitlines() if line.startswith("RUN="))
+    for name in GPU_ENV:
+        assert f" -e {name} " in run, name
+    assert "ATLAS_GPU_PRIORITY" in GPU_ENV and "TOKEN=" not in run
+    assert "/services/comfyui/warm" in script  # an idle-stopped ComfyUI is woken through iris
