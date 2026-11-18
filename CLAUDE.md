@@ -130,7 +130,9 @@ make preview   # export var/maps/areas -> var/tiles-areas and serve the solo are
 
 - When a rule changes in the doc, change `Tunables` or the rule and the test that pins it in the same commit.
   `tests/test_combat.py::DOC_RATES` mirrors the doc's table; if combat changes, re-run `make sim` and update both.
-- Everything a tick does must be a pure function of DB state plus the tick seed, so ticks can be replayed.
+- Everything a tick does must be a pure function of DB state plus the tick seed, so ticks can be replayed. Game logic
+  never reads the chain (argus-mint hard rule 6): an indexer copies chain state into the DB. `tests/test_deterministic_imports.py`
+  fails if `rules/` or the tick engine imports a chain, network or database client.
 - Ruff line-length 120, Pydantic v2, structlog, hatch-vcs versions from git tags. Matches argus-atlas tooling.
 - Remote: https://github.com/smk762/argus-realms (default branch `dev`; `main` is the release line).
 - **Modern Web Guidance.** `.claude/settings.json` enables Chrome's [modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance)
