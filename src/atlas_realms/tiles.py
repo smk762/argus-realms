@@ -138,6 +138,8 @@ def export_labels(maps: Path, out: Path) -> int:
     if features:
         out.mkdir(parents=True, exist_ok=True)
         (out / "labels.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": features}))
+    else:
+        (out / "labels.geojson").unlink(missing_ok=True)  # an earlier export's names would no longer match the tiles
     return len(features)
 
 

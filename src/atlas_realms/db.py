@@ -33,23 +33,39 @@ def migration_files() -> list[tuple[str, str]]:
     return sorted((p.name, p.read_text()) for p in root.iterdir() if p.name.endswith(".sql"))
 
 
+MIGRATION_LOCK = 0x61746C61_6D696772  # pg_advisory_lock key ("atlamigr"): one migrator at a time
+
+
 def migrate(conn: psycopg.Connection) -> list[str]:
-    """Apply pending migrations; returns the names applied."""
+    """Apply pending migrations; returns the names applied.
+
+    Each statement runs inside an explicit `conn.transaction()`, so no implicit transaction is left open even on a
+    connection that isn't autocommit (which would turn every migration into a savepoint of it). A session advisory lock
+    serialises concurrent starts; the applied set is read after taking it, so the second process sees the first's work.
+    """
+    if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+        raise RuntimeError("migrate() needs a connection with no transaction open")
     with conn.transaction():
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
-        )
-    done = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
-    applied = []
-    for name, sql in migration_files():
-        if name in done:
-            continue
+        conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK,))
+    try:
         with conn.transaction():
-            conn.execute(sql)
-            conn.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (name,))
-        log.info("migration_applied", name=name)
-        applied.append(name)
-    return applied
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+            )
+            done = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
+        applied = []
+        for name, sql in migration_files():
+            if name in done:
+                continue
+            with conn.transaction():
+                conn.execute(sql)
+                conn.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (name,))
+            log.info("migration_applied", name=name)
+            applied.append(name)
+        return applied
+    finally:
+        with conn.transaction():
+            conn.execute("SELECT pg_advisory_unlock(%s)", (MIGRATION_LOCK,))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,9 @@ reads one back. A blob from another build of the rules is refused (409) rather t
 """
 
 import base64
+import contextlib
 import hashlib
+import io
 import json
 import os
 import pickle
@@ -85,6 +87,22 @@ def load_regions(index: Path, root: Path) -> list[Region]:
         spawns = tuple((float(lat), float(lng)) for lat, lng in r["spawns"])
         out.append(Region(r["id"], r["title"], manifest, root / r["outline"], spawns, r.get("news")))
     return out
+
+
+class _SaveUnpickler(pickle.Unpickler):
+    """Unpickles a save without running arbitrary code: a blob may come from anywhere (an edited localStorage entry, a
+    save someone shared), so it may only name the game's own classes, never a function or another module's names."""
+
+    def find_class(self, module: str, name: str):
+        if (module == "atlas_realms" or module.startswith("atlas_realms.")) and "." not in name:
+            obj = super().find_class(module, name)
+            if isinstance(obj, type) and obj.__module__ == module:
+                return obj
+        raise pickle.UnpicklingError(f"a save may not reference {module}.{name}")
+
+
+def _load_save(raw: bytes):
+    return _SaveUnpickler(io.BytesIO(raw)).load()
 
 
 class HttpError(Exception):
@@ -163,7 +181,11 @@ class Arena:
             return {"paused": s.paused, "tick_every": s.tick_every}
         if verb == "report":
             s.catch_up(now)
-            return s.report(int(query.get("since", 0)))
+            try:
+                since = int(query.get("since", 0))
+            except ValueError as e:
+                raise HttpError(422, "since must be a tick number") from e
+            return s.report(since)
         if verb == "looks" and method == "POST":
             lk = Looks.model_validate(body)
             try:
@@ -190,6 +212,8 @@ class Arena:
         body = dict(body)
         seed = body.pop("seed", None)
         req = NewSolo.model_validate(body)
+        if seed is not None and not isinstance(seed, str):
+            raise HttpError(422, "seed must be a hex string")
         try:
             check_new(req)
             secret = bytes.fromhex(seed) if seed else os.urandom(32)
@@ -225,9 +249,11 @@ class Arena:
         """Load a save. `away` is what the client's "When away" setting did as the tab closed: "pause" keeps the time
         it was closed out of the game, "shield" raises the shield before the missed ticks are caught up."""
         try:
-            data = pickle.loads(zlib.decompress(base64.b64decode(blob)))  # noqa: S301 - the player's own save
+            data = _load_save(zlib.decompress(base64.b64decode(blob)))
         except Exception as e:
             raise HttpError(422, "unreadable save") from e
+        if not isinstance(data, dict) or not isinstance(data.get("session"), dict):
+            raise HttpError(422, "unreadable save")
         if data.get("v") != SAVE_VERSION or data.get("build") != self.build:
             raise HttpError(409, "saved by another version of the game")
         if data["session"].get("region") not in self.regions:
@@ -239,7 +265,8 @@ class Arena:
             s.paused = True
             s._last = now
         elif away == "shield":
-            s.submit("shield", {"on": True})
+            with contextlib.suppress(ValueError):  # the shield order was refused: load the game anyway, unshielded
+                s.submit("shield", {"on": True})
         self.session = s
         return {"id": SID, "seed": s.secret.hex(), "tick": s.world.tick, "region": s.region}
 
@@ -261,3 +288,5 @@ class Arena:
             return json.dumps({"status": 200, "body": out})
         except HttpError as e:
             return json.dumps({"status": e.status, "body": {"detail": e.detail}})
+        except Exception as e:  # never throw into the worker: every request gets a {status, body} answer
+            return json.dumps({"status": 500, "body": {"detail": f"{type(e).__name__}: {e}"}})

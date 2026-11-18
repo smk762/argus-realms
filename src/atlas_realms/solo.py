@@ -47,6 +47,8 @@ EVENTS = 5000  # news events kept for 'while you were away' reports
 # The solo arena's rules: the shared ones; Session.new sets the hex cap from the map (PvP keeps DEFAULT's).
 SOLO = DEFAULT
 MAX_CATCH_UP = 120  # ticks run per request at most, so a long-idle tab doesn't stall the server
+MAX_PENDING = 100  # the human's orders queued for one tick (a paused game queues them all for the next)
+RESULTS = 50  # order results kept for state() (it shows the last 10)
 DEFAULT_ROSTER = ("settler", "raider", "warden", "corsair", "sapper", "jackal", "rival", "reaver")
 
 
@@ -120,6 +122,8 @@ class Session:
         """Queue one of the human's orders for the next tick; returns its id."""
         if kind == "class" and payload.get("class") not in CLASSES:
             raise ValueError("unknown class")
+        if len(self._pending) >= MAX_PENDING:
+            raise ValueError("too many orders queued")
         oid = self._next_order
         self._next_order += 1
         self._pending.append(Order(id=oid, user_id=HUMAN, kind=kind, payload=payload, seq=oid))
@@ -156,6 +160,8 @@ class Session:
         del self.events[:-EVENTS]
         mine = {o.id for o in orders if o.user_id == HUMAN}
         self.results.update({k: v for k, v in out.order_results.items() if k in mine})
+        for k in list(self.results)[:-RESULTS]:
+            del self.results[k]
         self.battles.extend((self.world.tick, b) for b in out.battles)
         del self.battles[:-50]
         units = self.world.units
@@ -288,7 +294,7 @@ class Session:
             "history": [self._battle(tick, b, rolls=True) for tick, b in reversed(self.history)]
             if w.users[HUMAN].subscriber
             else None,
-            "results": dict(list(self.results.items())[-10:]),
+            "results": dict(list(self.results.items())[-10:]),  # at most RESULTS
         }
 
     def _market(self) -> dict:

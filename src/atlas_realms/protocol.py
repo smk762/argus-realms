@@ -17,7 +17,7 @@ SPAWNS = [(-41.2865, 174.7762), (-41.2906, 174.0010)]  # Wellington side, Picton
 class NewSolo(BaseModel):
     name: str = Field("You", min_length=1, max_length=24)
     unit_class: str = "barbarian"
-    bots: list[str] = list(DEFAULT_ROSTER)
+    bots: list[str] = Field(default_factory=lambda: list(DEFAULT_ROSTER), max_length=len(PERSONALITIES))
     tick_every: float = Field(2.0, ge=0.25, le=60)
     subscriber: bool = False
     region: str | None = None  # the browser arena's map (regions.json); None = its default

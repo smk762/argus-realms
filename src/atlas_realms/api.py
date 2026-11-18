@@ -9,6 +9,8 @@ Postgres world) adds its own routes next to these without changing the client's 
 import argparse
 import json
 import secrets
+import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -23,18 +25,33 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "web"
 OUTLINE = ROOT / "data" / "nz_mainland.geojson"
 MAX_SESSIONS = 50
+IDLE_SECONDS = 30 * 60  # a session untouched this long may be evicted to make room for a new one
 
 
 def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI:
     app = FastAPI(title="Atlas Realms")
     manifest = json.loads((tiles / "manifest.json").read_text())
     sessions: dict[str, Session] = {}
+    seen: dict[str, float] = {}  # sid -> last request (monotonic)
+    lock = threading.Lock()  # the sync routes run in a threadpool
 
     def get(sid: str) -> Session:
-        s = sessions.get(sid)
-        if s is None:
-            raise HTTPException(404, "no such session")
+        with lock:
+            s = sessions.get(sid)
+            if s is None:
+                raise HTTPException(404, "no such session")
+            seen[sid] = time.monotonic()
         return s
+
+    def make_room() -> None:
+        """Called under `lock`: evict the longest-idle session if the store is full, but never one still in use."""
+        if len(sessions) < MAX_SESSIONS:
+            return
+        oldest = min(seen, key=seen.__getitem__)
+        if time.monotonic() - seen[oldest] < IDLE_SECONDS:
+            raise HTTPException(503, "the arena is full: try again later")
+        sessions.pop(oldest, None)
+        seen.pop(oldest, None)
 
     @app.get("/api/manifest")
     def get_manifest() -> dict:
@@ -50,14 +67,16 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
             check_new(body)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
-        if len(sessions) >= MAX_SESSIONS:
-            sessions.pop(next(iter(sessions)))  # oldest first
+        with lock:
+            make_room()  # refuse before the expensive world build
         world = build_world(manifest, outline, SPAWNS)
         s = Session.new(
             world, body.name, body.unit_class, tuple(body.bots), body.subscriber, tick_every=body.tick_every
         )
         sid = secrets.token_urlsafe(9)
-        sessions[sid] = s
+        with lock:
+            make_room()  # again: another request may have filled the store meanwhile
+            sessions[sid], seen[sid] = s, time.monotonic()
         return {"id": sid}
 
     @app.get("/api/solo/{sid}/hexes")

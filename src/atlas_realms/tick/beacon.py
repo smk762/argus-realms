@@ -6,6 +6,7 @@ tries each relay in turn. If none answers within `WAIT` seconds it raises `Beaco
 the runner skips the tick; the orders stay pending for the next one.
 """
 
+import http.client
 import json
 import time
 import urllib.error
@@ -38,11 +39,15 @@ def fetch(r: int, relay: str) -> Beacon | None:
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             body = json.load(resp)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+    except (OSError, http.client.HTTPException, ValueError) as e:  # URLError and timeouts are OSErrors
         log.debug("beacon_fetch_failed", relay=relay, round=r, error=str(e))
         return None
-    b = Beacon(round=int(body["round"]), signature=bytes.fromhex(body["signature"]))
-    if b.round != r or not matches(b, body["randomness"]):
+    try:
+        b = Beacon(round=int(body["round"]), signature=bytes.fromhex(body["signature"]))
+        ok = b.round == r and matches(b, body["randomness"])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        ok = False
+    if not ok:
         log.warning("beacon_bad_reply", relay=relay, round=r)
         return None
     return b

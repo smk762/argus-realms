@@ -34,14 +34,23 @@ def encode(args: tuple[Path, Path, int]) -> int:
 
 
 def export(tiles: Path, style: str, out: Path, quality: int = 88) -> dict:
-    """tiles/<style>/<z>/<x>/<y>.png -> out/<z>/<x>/<y>.webp; returns the tile count, zooms and bytes."""
-    jobs = []
-    for p in sorted((tiles / style).rglob("*.png")):
-        z, x, y = p.parts[-3], p.parts[-2], p.stem
+    """tiles/<style>/<z>/<x>/<y>.png -> out/<z>/<x>/<y>.webp; returns the tile count, zooms and bytes.
+
+    Only <z>/<x>/<y>.png counts as a tile: any other PNG under the style (a legend, a preview) is left out."""
+    root = tiles / style
+    jobs, zooms = [], set()
+    for p in sorted(root.rglob("*.png")):
+        rel = p.relative_to(root).parts
+        if len(rel) != 3 or not all(v.isdigit() for v in (rel[0], rel[1], p.stem)):
+            continue
+        z, x, y = rel[0], rel[1], p.stem
         jobs.append((p, out / z / x / f"{y}.webp", quality))
+        zooms.add(int(z))
+    if not jobs:
+        raise FileNotFoundError(f"no <z>/<x>/<y>.png tiles under {root}")
     with Pool() as pool:
         sizes = pool.map(encode, jobs, chunksize=8)
-    zooms = sorted({int(j[0].parts[-3]) for j in jobs})
+    zooms = sorted(zooms)
     return {"style": style, "tiles": len(jobs), "minzoom": zooms[0], "maxzoom": zooms[-1], "bytes": sum(sizes)}
 
 

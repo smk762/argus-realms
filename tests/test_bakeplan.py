@@ -147,3 +147,24 @@ def test_plans_forward_the_gpu_lease_settings_by_name():
         assert f" -e {name} " in run, name
     assert "ATLAS_GPU_PRIORITY" in GPU_ENV and "TOKEN=" not in run
     assert "/services/comfyui/warm" in script  # an idle-stopped ComfyUI is woken through iris
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--name", "a b"],
+        ["--name", "x;rm -rf ~"],
+        ["--styles", "antique,a/b"],
+        ["--styles", "$(id)"],
+        ["--layers", "water,ro ads"],
+        ["--image", "img; echo hi"],
+        ["--styles", ""],
+        ["--styles", ","],
+    ],
+)
+def test_values_that_would_break_the_script_are_refused(extra):
+    args = ["--name", "ok", "--tiles", "10/1009/641", *extra]
+    buf = io.StringIO()
+    with redirect_stdout(buf), pytest.raises(SystemExit) as e:
+        main(args)
+    assert e.value.code == 2 and buf.getvalue() == ""  # refused before a line of the plan is printed

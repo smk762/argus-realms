@@ -117,3 +117,54 @@ def test_a_save_from_a_missing_region_is_refused():
     with pytest.raises(HttpError) as e:
         Arena([r for r in REGIONS if r.id != "iceland"]).restore(a.save(), now=0.0)
     assert e.value.status == 409
+
+
+@pytest.mark.parametrize("url", ["/api/solo/local/report?since=abc", "/api/solo/local/report?since=1.5"])
+def test_a_malformed_since_is_a_422(arena, url):
+    with pytest.raises(HttpError) as e:
+        arena.call("GET", url, now=100.0)
+    assert e.value.status == 422
+
+
+@pytest.mark.parametrize("seed", [12, True, ["ab"]])
+def test_a_non_string_seed_is_a_422(seed):
+    with pytest.raises(HttpError) as e:
+        Arena(REGIONS).call("POST", "/api/solo", {"seed": seed}, now=0.0)
+    assert e.value.status == 422
+
+
+def test_handle_answers_even_when_the_rules_raise(arena, monkeypatch):
+    def boom(*_a, **_k):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(arena, "call", boom)
+    r = json.loads(arena.handle(json.dumps({"op": "call", "method": "GET", "url": "/api/meta", "now": 0})))
+    assert r["status"] == 500 and "bug" in r["body"]["detail"]
+
+
+def test_a_save_cannot_run_code(arena, tmp_path):
+    import base64
+    import pickle
+    import zlib
+
+    marker = tmp_path / "pwned"
+
+    class Evil:
+        def __reduce__(self):
+            return (open, (str(marker), "w"))
+
+    blob = base64.b64encode(zlib.compress(pickle.dumps({"v": 3, "build": arena.build, "session": Evil()}))).decode()
+    with pytest.raises(HttpError) as e:
+        Arena(REGIONS).restore(blob, now=0.0)
+    assert e.value.status == 422 and not marker.exists()
+
+
+def test_a_shield_restore_that_is_refused_still_loads_the_game(arena):
+    from atlas_realms.solo import MAX_PENDING
+
+    arena.call("POST", "/api/solo/local/control", {"paused": True}, now=100.0)
+    for _ in range(MAX_PENDING):
+        arena.call("POST", "/api/solo/local/orders", {"kind": "cancel"}, now=100.0)
+    b = Arena(REGIONS)
+    assert b.restore(arena.save(), now=200.0, away="shield")["id"] == "local"
+    assert b.session is not None

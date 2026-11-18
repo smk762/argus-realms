@@ -54,5 +54,62 @@ def test_one_user_capital_per_player(conn):
 
 def test_unit_is_player_or_ai_not_both(conn):
     conn.execute("INSERT INTO hexes (h3, zone, terrain) VALUES (%s, 'spawn', 'flat')", (WELLINGTON,))
-    with pytest.raises(psycopg.errors.CheckViolation):
+    uid = _user(conn)
+    ai = conn.execute(
+        "INSERT INTO ai_events (target_user_id, announced_tick, starts_tick, ends_tick) VALUES (%s, 0, 0, 1) RETURNING id",
+        (uid,),
+    ).fetchone()[0]
+    with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():  # neither
         conn.execute("INSERT INTO units (hex, hp) VALUES (%s, 100)", (WELLINGTON,))
+    with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():  # both
+        conn.execute(
+            "INSERT INTO units (hex, hp, user_id, ai_event_id) VALUES (%s, 100, %s, %s)", (WELLINGTON, uid, ai)
+        )
+    conn.execute("INSERT INTO units (hex, hp, user_id) VALUES (%s, 100, %s)", (WELLINGTON, uid))  # one is fine
+
+
+def _fresh_db():
+    import uuid
+
+    from tests.conftest import TEST_DSN
+
+    name = f"test_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(TEST_DSN, autocommit=True) as admin:
+        admin.execute(f'CREATE DATABASE "{name}"')
+    return name, psycopg.conninfo.make_conninfo(TEST_DSN, dbname=name)
+
+
+def _drop_db(name):
+    from tests.conftest import TEST_DSN
+
+    with psycopg.connect(TEST_DSN, autocommit=True) as admin:
+        admin.execute(f'DROP DATABASE "{name}" WITH (FORCE)')
+
+
+def test_migrations_commit_on_a_connection_that_is_not_autocommit():
+    name, url = _fresh_db()
+    try:
+        with psycopg.connect(url) as c:  # psycopg's default: implicit transactions
+            assert migrate(c)
+            c.rollback()  # nothing may be left pending for the caller to commit
+        with psycopg.connect(url, autocommit=True) as c:
+            assert migrate(c) == []
+    finally:
+        _drop_db(name)
+
+
+def test_concurrent_migrations_apply_each_file_once():
+    from concurrent.futures import ThreadPoolExecutor
+
+    name, url = _fresh_db()
+    try:
+
+        def run():
+            with psycopg.connect(url, autocommit=True) as c:
+                return migrate(c)
+
+        with ThreadPoolExecutor(4) as pool:
+            results = list(pool.map(lambda _: run(), range(4)))
+        assert sorted(n for r in results for n in r) == [n for n, _ in migration_files()]
+    finally:
+        _drop_db(name)
