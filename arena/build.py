@@ -162,12 +162,19 @@ def _package_dir(name: str) -> Path:
     return Path(spec.origin).parent
 
 
+def _put(z: zipfile.ZipFile, arc: str, data: bytes) -> None:
+    """One entry with a fixed timestamp and mode, so the archive (and its hashed name) depends on content only."""
+    info = zipfile.ZipInfo(arc, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type, info.external_attr = zipfile.ZIP_DEFLATED, 0o644 << 16
+    z.writestr(info, data, compresslevel=9)
+
+
 def _add_tree(z: zipfile.ZipFile, src: Path, arc: str, skip: tuple[str, ...] = ()) -> None:
     for p in sorted(src.rglob("*")):
         rel = p.relative_to(src)
         if p.is_dir() or any(part in skip for part in rel.parts) or p.suffix not in (".py", ".sql", ".json"):
             continue
-        z.write(p, f"{arc}/{rel.as_posix()}")
+        _put(z, f"{arc}/{rel.as_posix()}", p.read_bytes())
 
 
 def load_index() -> list[dict]:
@@ -184,15 +191,16 @@ def python_zip(dest: Path, regions: list[dict]) -> str:
         _add_tree(z, ROOT / "src" / "atlas_realms", "atlas_realms", ("__pycache__", "_version.py"))
         _add_tree(z, _package_dir("argus_atlas"), "argus_atlas", ATLAS_SKIP)
         _add_tree(z, _package_dir("structlog"), "structlog", ("__pycache__",))
-        z.write(HERE / "py" / "arena_bridge.py", "arena_bridge.py")
-        z.write(HERE / "py" / "parity_scenario.py", "parity_scenario.py")
+        _put(z, "arena_bridge.py", (HERE / "py" / "arena_bridge.py").read_bytes())
+        _put(z, "parity_scenario.py", (HERE / "py" / "parity_scenario.py").read_bytes())
         index = []
         for r in regions:
-            outline = Path(r["outline"]).name
-            z.write(ROOT / r["outline"], f"data/{outline}")
-            z.write(ROOT / r["manifest"], f"data/world/{r['id']}.json")
+            # Keyed by region id like the manifest: two regions' outlines may share a file name.
+            outline = f"outline/{r['id']}{Path(r['outline']).suffix}"
+            _put(z, f"data/{outline}", (ROOT / r["outline"]).read_bytes())
+            _put(z, f"data/world/{r['id']}.json", (ROOT / r["manifest"]).read_bytes())
             index.append({**_public(r), "manifest": f"world/{r['id']}.json", "outline": outline})
-        z.writestr("data/regions.json", json.dumps({"regions": index}))
+        _put(z, "data/regions.json", json.dumps({"regions": index}).encode())
     digest = hashlib.sha256(tmp.read_bytes()).hexdigest()[:12]
     name = f"realms-{digest}.zip"
     tmp.rename(dest / name)
@@ -267,9 +275,11 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path) -> tuple[
                 shutil.rmtree(cached)
             export(root, s["name"], cached, TILE_QUALITY)
             (cached / "done").write_text("")
+        if (dest / s["name"]).exists():  # a previous build's tiles: replace them, never merge stale ones in
+            shutil.rmtree(dest / s["name"])
         shutil.copytree(cached, dest / s["name"], ignore=shutil.ignore_patterns("done"))
         n += len(src)
-        size += sum(p.stat().st_size for p in (dest / s["name"]).rglob("*.webp"))
+        size += sum(p.stat().st_size for p in cached.rglob("*.webp"))
     if manifest["labels_url"]:
         shutil.copy2(tiles / "labels.geojson", dest / "labels.geojson")
     return n, size
@@ -375,7 +385,7 @@ def check_pages_limits(out: Path, files: list[Path]) -> None:
     big = [p for p in files if p.stat().st_size > PAGES_MAX]
     if big:
         sys.exit(f"over the Pages 25 MiB per-file limit: {', '.join(str(p.relative_to(out)) for p in big)}")
-    if len(files) >= PAGES_FILES:
+    if len(files) > PAGES_FILES:
         sys.exit(f"{len(files)} files: over the Pages limit of {PAGES_FILES:,} per deployment")
     ranged = [p for p in files if p.suffix == ".pmtiles"]
     if ranged:

@@ -790,3 +790,73 @@ def test_bots_move_at_half_speed_unless_on_a_job():
 
     assert ticks_to_cross(hired=True) == TICKS_PER_HEX
     assert ticks_to_cross(hired=False) == math.ceil(hex_minutes() / DEFAULT.bot_speed)
+
+
+# -- malformed orders never abort the tick ------------------------------------------------------
+
+
+def test_a_shielded_move_to_an_unknown_hex_is_unreachable():
+    w = make_world()
+    u = add_player(w, 1, CENTRE)
+    u.shield_hp = 500
+    out = step(w, [Order(id=1, user_id=1, kind="move", payload={"to": "garbage"}, seq=1), move(1, "None", seq=2)])
+    assert out.order_results == {1: "unreachable", 2: "unreachable"}
+
+
+def test_a_non_numeric_repair_hp_is_refused():
+    w = make_world()
+    add_player(w, 1, CENTRE)
+    city = w.hexes[RING1[0]]
+    city.owner_id, city.owner_since_tick, city.garrison_hp = 1, 0, 20
+    w.users[1].treasury = 10**6
+    out = step(w, [repair(1, RING1[0], hp="abc", seq=70), repair(1, RING1[0], hp=[1], seq=71)])
+    assert out.order_results == {70: "bad hp", 71: "bad hp"}
+    assert out.world.hexes[RING1[0]].garrison_hp == 20
+
+
+def test_a_non_numeric_hire_offer_is_refused():
+    w = services_world()
+    out = step(w, [hire(1, 2, "guard", offer="abc"), hire(3, 2, "guard", 121, offer={"x": 1})])
+    assert out.order_results == {120: "bad offer", 121: "bad offer"}
+    assert out.world.contracts == {}
+
+
+def test_unhashable_class_and_clan_payloads_are_refused():
+    w = make_world(spawn=None)
+    add_player(w, 1, CENTRE, clan=1)
+    add_player(w, 2, RING1[0], clan=2)
+    w.users[1].subscriber = True
+    out = step(
+        w,
+        [
+            Order(id=1, user_id=1, kind="class", payload={"class": ["scout"]}, seq=1),
+            Order(id=2, user_id=1, kind="nemesis", payload={"clan": [2]}, seq=2),
+            Order(id=3, user_id=1, kind="nemesis", payload={"clan": {"a": 1}}, seq=3),
+        ],
+    )
+    assert out.order_results == {1: "unknown class", 2: "not a valid nemesis", 3: "not a valid nemesis"}
+
+
+def test_a_hex_held_since_tick_zero_counts_its_whole_holding():
+    from atlas_realms.tick.engine import flip_needed
+
+    h = Hex(h3=CENTRE, zone="land", tier=1, owner_id=1, owner_since_tick=0)
+    assert flip_needed(h, 60 * 30) == 30  # held 30 hours -> 30 flip ticks, not x_min
+
+
+def test_double_march_on_own_land_halves_the_cost_once():
+    import math
+
+    w = make_world(spawn=None)
+    u = add_player(w, 1, CENTRE)
+    line = [CENTRE]
+    while len(line) < 4:
+        line.append(sorted(n for n in h3.grid_ring(line[-1], 1) if h3.grid_distance(CENTRE, n) == len(line))[0])
+    for cell in line:
+        w.hexes[cell].owner_id, w.hexes[cell].owner_since_tick = 1, 0
+    u.path, u.mode = line[1:], "double_march"
+    per_tick = 2 * DEFAULT.tick_seconds / 60  # marching earns twice the walking progress...
+    need = 3 * hex_minutes() * DEFAULT.cost_own_land  # ...against unmarched own-land costs
+    out = step(w, n=math.ceil(need / per_tick) - 1)
+    assert out.world.units[1].path  # one tick short
+    assert step(out.world).world.units[1].hex == line[-1]

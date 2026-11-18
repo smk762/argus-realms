@@ -168,3 +168,20 @@ def test_chunks_bounds_are_the_tile_edges_never_past_them():
     z = 7
     tile_x = lambda lon: (lon + 180) / 360 * 2**z  # noqa: E731
     assert tile_x(e) <= 60 and tile_x(w) >= 55
+
+
+def test_a_re_export_without_names_removes_the_old_labels(tmp_path):
+    from atlas_realms.tiles import export_labels
+
+    maps, out = tmp_path / "maps", tmp_path / "out"
+    job = maps / "antique" / "antique-10-1009-641"
+    job.mkdir(parents=True)
+    feature = {
+        "type": "Feature",
+        "properties": {"name": "Wellington"},
+        "geometry": {"type": "Point", "coordinates": [174.8, -41.3]},
+    }
+    (job / "labels.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [feature]}))
+    assert export_labels(maps, out) == 1 and (out / "labels.geojson").exists()
+    (job / "labels.geojson").unlink()
+    assert export_labels(maps, out) == 0 and not (out / "labels.geojson").exists()

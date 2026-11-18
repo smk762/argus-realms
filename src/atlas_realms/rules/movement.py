@@ -100,8 +100,10 @@ def advance(
 ) -> StepResult:
     """Earn one tick of progress and take as many steps as it pays for.
 
-    At cost 0.25 (own land, marching) that is up to 4 steps, and contact is checked before
-    each one. Reaching the end of the route, or making contact, drops leftover progress.
+    Double march is applied here and only here: it earns twice the progress, so `cost` must return
+    unmarched costs. A 1-minute tick at cost 0.5 (own land) buys 2 steps, or 4 when marching (each
+    hex then effectively costs 0.25). Contact is checked before each step. Reaching the end of the
+    route, or making contact, drops leftover progress.
     """
     progress += minutes * (2 if march else 1)
     path = list(path)

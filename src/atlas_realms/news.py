@@ -78,6 +78,10 @@ def digest(
     def whose(uid: int | None) -> str:
         return "your" if uid == you else f"{names.get(uid, 'a stranger')}'s"
 
+    def Whose(uid: int | None) -> str:  # noqa: N802 - sentence case
+        w = whose(uid)
+        return w[0].upper() + w[1:]
+
     def does(uid: int | None, it: str, you_: str) -> str:
         """The verb that agrees with the subject: 'Raider downs', 'You down'."""
         return you_ if uid == you else it
@@ -110,7 +114,7 @@ def digest(
         lost = e["outcome"] == Outcome.DEFENDER_WON.value
         if won and not e["garrison"]:
             kills[a] += 1
-        if lost:
+        if lost and d is not None:  # an ownerless garrison is nobody's streak
             kills[d] += 1
         mine = you in (a, d)
         if e["garrison"]:
@@ -142,7 +146,7 @@ def digest(
                 story(3, "siege", mine, "Stalemate at the walls", text, f"{who(a)} and {walls} fought to a draw")
             continue
         upset = won and e["attacker_hp"] < e["defender_hp"] or lost and e["defender_hp"] < e["attacker_hp"]
-        shield = f" {Who(d)}'s shield soaked {e['shield']} before it was over." if e["shield"] else ""
+        shield = f" {Whose(d)} shield soaked {e['shield']} before it was over." if e["shield"] else ""
         if won:
             text = pick(
                 [

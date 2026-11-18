@@ -1,3 +1,5 @@
+import http.client
+
 import pytest
 
 from atlas_realms.rules import beacon as rb
@@ -81,4 +83,41 @@ def test_fetch_rejects_a_reply_that_does_not_check_out(monkeypatch):
     monkeypatch.setattr(tb.urllib.request, "urlopen", reply({**good, "randomness": "00" * 32}))
     assert tb.fetch(ROUND, "https://relay") is None
     monkeypatch.setattr(tb.urllib.request, "urlopen", reply({**good, "round": ROUND + 1}))
+    assert tb.fetch(ROUND, "https://relay") is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        [],
+        None,
+        {"round": ROUND},
+        {"round": ROUND, "signature": "not hex", "randomness": RANDOMNESS},
+        {"round": "x", "signature": SIGNATURE.hex(), "randomness": RANDOMNESS},
+        {"round": ROUND, "signature": SIGNATURE.hex(), "randomness": 7},
+    ],
+)
+def test_fetch_returns_none_for_a_malformed_reply(monkeypatch, body):
+    import io
+    import json
+
+    monkeypatch.setattr(tb.urllib.request, "urlopen", lambda req, timeout: io.BytesIO(json.dumps(body).encode()))
+    assert tb.fetch(ROUND, "https://relay") is None
+
+
+@pytest.mark.parametrize(
+    "error", [http.client.IncompleteRead(b""), ConnectionResetError(), UnicodeDecodeError("utf-8", b"", 0, 1, "x")]
+)
+def test_fetch_returns_none_when_reading_the_body_fails(monkeypatch, error):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, *a):
+            raise error
+
+    monkeypatch.setattr(tb.urllib.request, "urlopen", lambda req, timeout: Resp())
     assert tb.fetch(ROUND, "https://relay") is None

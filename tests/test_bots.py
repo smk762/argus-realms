@@ -173,13 +173,17 @@ def test_reaver_raids_a_top_earners_hex():
 def test_solo_session_runs_and_bots_play_differently():
     manifest = {"ready_chunks": [[10, x, y] for x in range(1006, 1013) for y in range(638, 645)]}
     w = build_world(manifest, ROOT / "data" / "nz_mainland.geojson", [(-41.2865, 174.7762), (-41.2906, 174.0010)])
-    s = Session.new(w, "test")
+    s = Session.new(w, "test", secret=b"bots" * 8)  # seeded: the bots' choices replay exactly
     for _ in range(300):
         s.step()
     st = s.state()
     assert st["tick"] == 300
-    assert sum(p["hexes"] for p in st["players"] if p["bot"]) > 5
-    assert all(u["veteran"] for u in st["units"] if u["user_id"] != st["you"])
+    bots = [p for p in st["players"] if p["bot"]]
+    assert len(bots) == 8 and sum(p["hexes"] for p in bots) > 5
+    assert len({p["hexes"] for p in bots}) > 1  # each personality ends up holding a different amount of land
+    bot_units = [u for u in st["units"] if u["user_id"] != st["you"]]
+    assert len(bot_units) == len(bots) and all(u["veteran"] for u in bot_units)
+    assert len({u["class"] for u in bot_units}) > 1  # personalities field different classes
     assert json.dumps(st)  # the state is plain JSON for the client
 
 
@@ -221,3 +225,29 @@ def test_the_arena_runs_half_again_as_fast_as_its_speed_setting():
     s = Session.new(world_with(spawn=CENTRE), "test", roster=("settler",), tick_every=2.0)
     s._last = 0.0
     assert PACE == 1.5 and s.catch_up(now=12.0) == 9  # 12 s at "2 s a tick" is 9 ticks, not 6
+
+
+def test_a_paused_game_queues_a_bounded_number_of_orders():
+    from atlas_realms.solo import MAX_PENDING
+
+    s = Session.new(world_with(spawn=CENTRE), "test", roster=("settler",))
+    s.paused = True
+    for _ in range(MAX_PENDING):
+        s.submit("cancel", {})
+    with pytest.raises(ValueError, match="too many orders"):
+        s.submit("cancel", {})
+    s.step()
+    s.submit("cancel", {})  # the queue drains with the tick
+
+
+def test_order_results_are_kept_to_a_window():
+    from atlas_realms.solo import MAX_PENDING, RESULTS
+
+    s = Session.new(world_with(spawn=CENTRE), "test", roster=("settler",))
+    for _ in range(3):
+        for _ in range(MAX_PENDING):
+            s.submit("cancel", {})
+        s.step()
+    assert len(s.results) == RESULTS
+    assert min(s.results) > 2 * MAX_PENDING  # the newest are kept
+    assert len(s.state()["results"]) == 10

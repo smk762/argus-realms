@@ -17,9 +17,9 @@ let renaming = null;
 let popup = null, popupUser = null; // the open player card on the map
 const sentNames = new Map();
 
-async function api(path, body) {
+async function api(path, body, keepalive = false) {
   const r = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive,
   });
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
@@ -237,7 +237,7 @@ function draw(st) {
       geometry: { type: "Point", coordinates: [lng + r * Math.cos(a) * 1.3, lat + r * Math.sin(a)] },
       properties: {
         // A shielded unit sits in a bubble, in its player's shield look.
-        icon: `unit:${u.class}:${colorOf(u.user_id)}:${u.user_id === st.you ? "you" : "bot"}:${u.shield ? looks.get(u.user_id) : ""}`,
+        icon: `unit:${u.class}:${colorOf(u.user_id)}:${u.user_id === st.you ? "you" : "bot"}:${u.shield ? looks.get(u.user_id) || meta.shield_looks.plain : ""}`,
         you: u.user_id === st.you,
         user_id: u.user_id,
         hpIcon: ((h) => `hp:${Math.round(h.pct / 5) * 5}:${u.user_id === st.you ? 34 : 28}:${h.colour}`)(health(u)),
@@ -665,7 +665,8 @@ function openHire(bot) {
     return { start: at };
   };
   $("hire-options").replaceChildren(...Object.entries(SERVICE).map(([kind, s]) => {
-    const price = hunting && kind === "merc" ? 2 * hunting.price : info.quotes[kind];
+    // A buy-off offers whole coins, so it is checked (and shown) at the rounded-up amount it will send.
+    const price = hunting && kind === "merc" ? Math.ceil(2 * hunting.price) : info.quotes[kind];
     const row = document.createElement("div");
     row.className = "hire-row";
     row.innerHTML = "<div><strong></strong> <span class='small'></span><div class='small'></div></div><button type='button'></button>";
@@ -679,7 +680,7 @@ function openHire(bot) {
     b.onclick = () => {
       const payload = { bot, kind, ...when() };
       if (kind === "merc" && target.value) payload.target = Number(target.value);
-      if (hunting && kind === "merc") payload.offer = Math.ceil(price);
+      if (hunting && kind === "merc") payload.offer = price;
       order("hire", payload);
       $("hire").close();
     };
@@ -896,8 +897,10 @@ async function poll() {
   try {
     lastState = await api(`/api/solo/${sid}/state`);
     if (lastState.playable_hexes !== fogCount) {
-      fogCount = lastState.playable_hexes;
+      // Counted only once the fog is drawn: a failed fetch is retried on the next poll.
+      const playable = lastState.playable_hexes;
       map.getSource("fog").setData(await api(`/api/solo/${sid}/fog`));
+      fogCount = playable;
     }
     draw(lastState);
     renderPanel(lastState);
@@ -1012,8 +1015,8 @@ function wirePanel() {
 
 let autoPaused = false, autoShielded = false, lastInput = Date.now();
 
-function setPaused(paused) {
-  return sid ? api(`/api/solo/${sid}/control`, { paused }).catch(() => {}) : Promise.resolve();
+function setPaused(paused, keepalive = false) {
+  return sid ? api(`/api/solo/${sid}/control`, { paused }, keepalive).catch(() => {}) : Promise.resolve();
 }
 
 function you() { return lastState.players.find((p) => p.id === lastState.you); }
@@ -1030,12 +1033,16 @@ function awayNow() {
   markAway();
   const mode = $("away").value, me = myUnit();
   if (!me || autoPaused || autoShielded) return;
+  // Hiding a tab that is about to close lands here before pagehide, so the flag is stored now (pagehide then has
+  // nothing left to do) and the request is keepalive, to outlive the page.
   if (mode === "pause" && !lastState.paused) {
     autoPaused = true;
-    setPaused(true);
+    store.set("autopaused", sid);
+    setPaused(true, true);
   } else if (mode === "shield" && me.on_map && !me.shield && !me.shield_ready_in) {
     autoShielded = true;
-    order("shield", { on: true });
+    store.set("autoshielded", sid);
+    api(`/api/solo/${sid}/orders`, { kind: "shield", payload: { on: true } }, true).catch((e) => toast(e.message));
   }
 }
 

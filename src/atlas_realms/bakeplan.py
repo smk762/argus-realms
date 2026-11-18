@@ -19,6 +19,7 @@ explicit chunk list instead of a block (the islands, whose outlines miss an isle
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -111,6 +112,10 @@ def run_line(image: str) -> str:
 
 
 OSM_LAYERS = "water,rivers,roads,forest,urban"
+# Values written unquoted into the plan (paths, `sed`, `test -f`) must be plain words, so a plan can't be broken or made
+# to run something else by a name with a space, `;`, `$()`, a quote or a `/`.
+WORD = re.compile(r"[A-Za-z0-9_-]+")
+IMAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@-]*")
 # `dem` snaps its window inward to the GLO-30 lattice (1 arc-second); padding keeps the canvas edges covered.
 DEM_PAD_DEG = 0.01
 
@@ -168,6 +173,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--hex-res", type=int, default=DEFAULT.h3_resolution, help="H3 resolution for hex counts")
     a = p.parse_args(argv)
 
+    if not WORD.fullmatch(a.name):
+        p.error("--name must be letters, digits, '-' or '_'")
+    styles = [s for s in a.styles.split(",") if s]
+    if not styles:
+        p.error("--styles names no style")
+    if not all(WORD.fullmatch(v) for v in styles + a.layers.split(",")):
+        p.error("--styles and --layers must be comma-separated names of letters, digits, '-' or '_'")
+    if a.image and not IMAGE.fullmatch(a.image):
+        p.error("--image must be a plain image reference")
     if not a.commit or len(a.commit) != 40:
         p.error("--commit must be a full argus-atlas sha (default: docs/atlas/sync.json)")
     if a.tiles:
@@ -182,7 +196,6 @@ def main(argv: list[str] | None = None) -> None:
         block = lookahead(centre, a.rings)
     else:
         p.error("give --center (a block) or --tiles (a chunk list)")
-    styles = [s for s in a.styles.split(",") if s]
     prefix = f"areas/{a.name}/" if a.area else ""
 
     notes = []

@@ -19,9 +19,11 @@ clear (skipped: the page never fetches them) or wholly opaque (drawn as they are
 """
 
 import argparse
+import hashlib
 import io
 import json
 import math
+import os
 import time
 import urllib.request
 from pathlib import Path
@@ -40,12 +42,16 @@ CACHE: Path | None = None
 
 def fetch(url: str) -> bytes:
     if CACHE and url.endswith(".pbf"):
-        hit = CACHE / url.split("/planet/", 1)[1].replace("/", "_")
+        _, planet, rest = url.partition("/planet/")
+        name = rest.replace("/", "_") if planet else hashlib.sha256(url.encode()).hexdigest()[:24] + ".pbf"
+        hit = CACHE / name
         if hit.exists():
             return hit.read_bytes()
         data = _fetch(url)
         hit.parent.mkdir(parents=True, exist_ok=True)
-        hit.write_bytes(data)
+        tmp = hit.with_name(f"{hit.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, hit)  # the cache only ever holds whole tiles, even if a run is cut off mid-write
         return data
     return _fetch(url)
 
@@ -104,6 +110,10 @@ def main() -> None:
     ap.add_argument("--edge", type=float, default=8, help="fade towards the painted block's edge, in mask pixels")
     ap.add_argument("--cache", type=Path, help="keep the fetched vector tiles here for reruns")
     args = ap.parse_args()
+    if not args.fade > args.keep >= 0:
+        ap.error("--fade must be greater than --keep, and --keep at least 0")
+    if not args.edge > 0:
+        ap.error("--edge must be greater than 0")
     global CACHE
     CACHE = args.cache
 

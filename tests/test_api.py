@@ -69,3 +69,28 @@ def test_solo_cap_shares_the_land_out_and_everyone_starts_with_ten_coins(client)
     assert all(p["treasury"] == 10 for p in st["players"])
     few = client.post("/api/solo", json={"bots": ["settler"]}).json()["id"]
     assert client.get(f"/api/solo/{few}/state").json()["hex_cap"] == int(land / 2 * 1.68)
+
+
+def test_a_full_arena_refuses_new_games_instead_of_evicting_live_ones(client, monkeypatch):
+    import atlas_realms.api as api
+
+    monkeypatch.setattr(api, "MAX_SESSIONS", 2)
+    a = client.post("/api/solo", json={}).json()["id"]
+    b = client.post("/api/solo", json={}).json()["id"]
+    assert client.post("/api/solo", json={}).status_code == 503
+    assert (
+        client.get(f"/api/solo/{a}/state").status_code == 200 and client.get(f"/api/solo/{b}/state").status_code == 200
+    )
+    monkeypatch.setattr(api, "IDLE_SECONDS", 0)  # now both count as idle: the least recently used one goes
+    client.get(f"/api/solo/{a}/state")
+    c = client.post("/api/solo", json={})
+    assert c.status_code == 200
+    assert (
+        client.get(f"/api/solo/{b}/state").status_code == 404 and client.get(f"/api/solo/{a}/state").status_code == 200
+    )
+
+
+def test_the_bot_roster_is_bounded(client):
+    from atlas_realms.bots import PERSONALITIES
+
+    assert client.post("/api/solo", json={"bots": ["settler"] * (len(PERSONALITIES) + 1)}).status_code == 422
