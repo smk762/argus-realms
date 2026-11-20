@@ -4,7 +4,8 @@ Guidance for AI agents working in this repo. Human-facing usage lives in [README
 
 ## What this is
 
-The browser game that demonstrates argus-atlas, plus the static map demo at https://realms.dragonhound.dev (`site/`).
+The browser game that demonstrates argus-atlas, plus the static map demo, Atlas, at https://atlas.dragonhound.dev (`site/`). realms.dragonhound.dev is reserved
+for the game and redirects to Atlas until the game is hosted.
 The design doc (not public) is the source of truth for rules and numbers; `Tunables` and the tests mirror it.
 
 The game consumes argus-atlas as a pip package (and, later, through a GPU bake worker). General map
@@ -38,9 +39,9 @@ features go into argus-atlas; anything game-specific stays here. argus-atlas's o
 `src/atlas_realms/bakeplan.py` — `python -m atlas_realms.bakeplan` prints a bash script of argus-atlas commands for a
 block of chunks (`dem` for one GLO-30 GeoTIFF, one Overpass call for the controls and one for place names, recipes,
 `chunk` per tile per style in north-to-south, west-to-east order, then `labels --job` on the first style's chunks).
-It needs argus-atlas past 0.2.0a1 (`ATLAS_REF`, an image built from that commit); the pip pin stays on the release. The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
-`$ATLAS_HOST/recipes`, the model tree at `$ATLAS_MODELS`, finished chunks at `$ATLAS_MAPS/<style>/<style>-<z>-<x>-<y>/`
-(one dir per style is also what argus-atlas seams against). Generated plans are committed under `bakes/` and run on
+It bakes with an image built at the argus-atlas commit in `docs/atlas/sync.json` (the docs Atlas publishes; step 0 builds it from the argus-atlas checkout, refuses to start without it, and refuses to bake beside jobs of another build); the pip pin stays on the release. `--tiles` takes an exact chunk list instead of a block. Every area's plan is generated from `bakes/plans.json` by `make bake-plans` (`scripts/bake_plans.py`; `tests/test_bakeplan.py` fails on a stale or hand-edited plan, so a docs import and the plans move together). The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
+`$ATLAS_HOST/recipes`, the model tree at `$ATLAS_MODELS`, finished chunks at `$ATLAS_MAPS/areas/<area>/<style>/<style>-<z>-<x>-<y>/`
+(one dir per style is also what argus-atlas seams against). Atlas and the arena paint from the same bakes and exports (`var/tiles-areas/<area>`). Generated plans are committed under `bakes/` and run on
 the GPU host. Never commit host-specific paths, host names or LAN addresses.
 `data/` holds the region outlines (see `data/README.md`). The starting region is New Zealand (Cook Strait 7×7 block, H3 res 5).
 
@@ -84,10 +85,27 @@ Solo arena (the first playable mode; PvP on the shared Postgres world comes late
 - `solo.py` — `Session` (hex cap = claimable land / players × `cap_share`, set in `Session.new`; everyone starts
   with `start_coins`; it ticks `PACE` (1.5×) faster than its speed setting): an in-memory World built from the tile manifest + outline, lazy catch-up ticking, `state()`.
 - `api.py` — FastAPI: `/api/manifest`, `/api/meta`, `/api/solo/...`, static `/tiles` and `web/`.
-- `tiles.py` — exports `<maps>/<style>/<job>/fantasy.pmtiles` to static `<style>/<z>/<x>/<y>.png` + `manifest.json`,
+- `tiles.py` — exports `<maps>/areas/<area>/<style>/<job>/fantasy.pmtiles` (one area at a time, `make tiles`) to static `<style>/<z>/<x>/<y>.png` + `manifest.json`,
   and merges the chunks' `labels.geojson` (argus-atlas place names) into one `labels.geojson` the client draws.
 - `seed.py` — hexes from a manifest + outline (`plan_hexes`), into Postgres or (via `solo.build_world`) memory.
 - `web/` — the MapLibre client, no build step (`index.html`, `app.js`, `style.css`).
+- `protocol.py` — the solo API's request models, `meta()` and `SPAWNS`, without FastAPI (shared by `api.py` and `arena/`).
+
+`arena/` — the solo arena as a static site (realms.dragonhound.dev), design in `arena/DESIGN.md`. Pyodide runs the
+unchanged Python in a Web Worker: `arena/py/arena_bridge.py` answers the client's `/api/...` requests in-process (the
+wall clock passed in), `arena/src/app.js` is `web/app.js` talking to the worker and saving to localStorage.
+`arena/build.py` zips `src/atlas_realms` + argus-atlas + structlog, copies Pyodide (pinned in `arena/package.json`) and
+sha256-checked wheels, the regions (`arena/regions.json`: per map a world manifest in `arena/world/`, an outline in
+`data/`, spawns and the tile export to paint from; the client picks one at new game, the save records it), optional
+tiles (per region, packed by
+`arena/sea_fill.py` with the open sea painted in, then `arena/tiles_webp.py` into XYZ folders of WebP q88 files:
+never PMTiles, since Pages serves no range requests; `test/no-range.test.mjs` guards it), and writes `_headers` (CSP
+with `'wasm-unsafe-eval'`). `make arena-test` = build + `arena/test/parity.test.mjs` (Pyodide vs CPython, same state
+every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z7) is mapped onto the
+game's z10 by `rules.chunks.at_zoom`. The tick copies the world with `World.snapshot()`, not deepcopy (95% of a tick
+on Iceland); a new mutable field on Hex/Unit/User/Contract must be copied there (`tests/test_world_snapshot.py`). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
+Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the
+label suffix, which `build.py` allows). Loading quotes live in `arena/src/quotes.json`: genuine, sourced words only.
 
 `src/atlas_realms/db.py` — psycopg autocommit connection (`ATLAS_REALMS_DSN`) and a forward-only migration runner over
 `src/atlas_realms/migrations/*.sql`, recorded in `schema_migrations`. Never edit an applied migration; add a new file.
@@ -105,14 +123,16 @@ make sim
 make db-up     # compose database on 127.0.0.1:5433
 make tick      # one tick against the database (LOOP=1 keeps ticking)
 make test-db   # adds the DB tests, which SKIP unless ATLAS_REALMS_TEST_DSN is set
-make preview   # export var/maps -> var/tiles and serve the solo arena on http://127.0.0.1:8110
+make preview   # export var/maps/areas -> var/tiles-areas and serve the solo arena on http://127.0.0.1:8110
 ```
 
 ## Conventions
 
 - When a rule changes in the doc, change `Tunables` or the rule and the test that pins it in the same commit.
   `tests/test_combat.py::DOC_RATES` mirrors the doc's table; if combat changes, re-run `make sim` and update both.
-- Everything a tick does must be a pure function of DB state plus the tick seed, so ticks can be replayed.
+- Everything a tick does must be a pure function of DB state plus the tick seed, so ticks can be replayed. Game logic
+  never reads the chain (argus-mint hard rule 6): an indexer copies chain state into the DB. `tests/test_deterministic_imports.py`
+  fails if `rules/` or the tick engine imports a chain, network or database client.
 - Ruff line-length 120, Pydantic v2, structlog, hatch-vcs versions from git tags. Matches argus-atlas tooling.
 - Remote: https://github.com/smk762/argus-realms (default branch `dev`; `main` is the release line).
 - **Modern Web Guidance.** `.claude/settings.json` enables Chrome's [modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance)
@@ -120,11 +140,15 @@ make preview   # export var/maps -> var/tiles and serve the solo arena on http:/
   browser-API code in `site/` or `web/`, and re-run `npx -y modern-web-guidance@latest legacy-scan site` after big changes.
   `site/` is the static demo: no inline scripts (the page logic is `site/app.js`), MapLibre comes from cdnjs with SRI
   hashes (bump the hash with the version), and `scripts/build_static.py` writes the CSP into `_headers`, hashing the
-  inline `<style>`. A new third-party origin needs a CSP change there.
+  inline `<style>`. A new third-party origin needs a CSP change there. The docs page (`/docs/`, `docs/index.html` in the build) is rendered at build time from the
+  argus-atlas docs imported into `docs/atlas/` (`scripts/atlas_docs.py`, `make atlas-docs`; `sync.json` records the atlas
+  commit, version and file hashes): never edit them, re-import. Its styles live in `site/docs/docs.css`, so it adds no CSP
+  hash. `make static` refuses tiles baked at another atlas commit than the docs (docs/deploy.md §5); "How it was made"
+  and the style tooltips read the bake from the export manifest (`atlas_realms.tiles.bake_summary`), never hard-code it.
   `site/vendor/dh/` is the vendored Dragonhound shared layer (tokens, demo strip, badge, `dh-theme.js`), pinned by
   `.dh-shared.json`: re-sync it from dragonhound-site (`node scripts/sync-shared.mjs <this repo> --dest site/vendor/dh`)
   and check it with `node site/vendor/dh/sync-shared.mjs --check .`; never edit the copies. The build inlines its
   stylesheets into `index.html` (hashed by the CSP) and fails if the strip pasted into `index.html` drifts from
-  `dh-strip.html` (pasted unedited; `data-dh-site="realms"` on `<html>` marks Realms current, and `dh-theme.js`
+  `dh-strip.html` (pasted unedited; `data-dh-site="atlas"` on `<html>` marks Atlas current, and `dh-theme.js`
   adds `aria-current` and keeps the toggle's `aria-pressed` in sync). Never set `font` on `html` (the tokens are rem);
   panel text uses the `--dh-text-*` sizes, 12 px (`--dh-text-2xs`) at the smallest. Favicons are the argus-atlas set from argus-cortex `brand/packages/atlas/favicon/`, copied unchanged (all rights reserved).

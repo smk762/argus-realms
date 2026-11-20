@@ -29,3 +29,7 @@ skills-lock.json
 
 # Node
 node_modules/
+
+# The browser arena: build output and the downloaded Pyodide wheels
+arena/dist/
+arena/.cache/

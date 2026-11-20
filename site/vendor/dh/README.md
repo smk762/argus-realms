@@ -1,7 +1,7 @@
-# Dragonhound shared design layer (dh-shared v1, currently 1.2.2)
+# Dragonhound shared design layer (dh-shared v1, currently 1.2.8)
 
 The one source of truth for what the Dragonhound Labs sites share: dragonhound.dev (this repo,
-the reference look), Studio, Lightbox, Realms and Cull. Each repo vendors a pinned copy, so there is no
+the reference look), Studio, Lightbox, Atlas, Cull, Realms, Safelight, Assay, Sightline, Mask and Quarry. Each repo vendors a pinned copy, so there is no
 runtime dependency and no CSP change. A checksum keeps the copies honest.
 
 | File | What it is |
@@ -55,7 +55,7 @@ All names start with `--dh-`. Use the tokens; don't copy their values.
     .facet[data-group="1"] { background: var(--dh-cat-1-tint); color: var(--dh-cat-1-ink); border-color: var(--dh-cat-1); }
     ```
   - `--dh-accent` is for links, buttons and icons. A product may override **only** `--dh-accent` and
-    `--dh-on-accent` (Studio purple, Lightbox indigo, Realms amber; Cull keeps the family accent), at `:root`, in both schemes, and must keep 4.5:1 on `--dh-surface`.
+    `--dh-on-accent` (Studio purple, Lightbox indigo, Atlas amber; Cull keeps the family accent), at `:root`, in both schemes, and must keep 4.5:1 on `--dh-surface`.
   - `--dh-highlight` (#003366 light, #1a4d80 dark) is the card hover border and glow, and the landing logo's outline trace.
     In dark mode it is 2.1:1 on the background, so it is decorative only.
   - `--dh-focus` is the focus-ring colour: the highlight in light mode (12.2:1), a lighter tint #4a86c4 in dark mode (4.8:1 on bg, 4.4:1 on surface).
@@ -112,25 +112,36 @@ Four labels replace the seven found in the audit ("RECORDED", "DEMO", "DEMO SAMP
 ```
 
 Retired: "Demo", "Demo sample", "Coming soon" (inside a demo), "Recorded pipeline run", "demo on recorded data".
-The strip's own label is fixed: "Live demo · recorded output" ("Live demo" on phones).
+The strip's own label is "Live demo · recorded output" ("Live demo" on phones). A demo that computes in the visitor's
+browser instead (Realms) sets `data-dh-label="browser"` for "Live demo · runs in your browser" (1.2.4; see Demo strip).
 
 ## Demo strip
 
-One source, two forms: `dh-strip.mjs` exports the links, labels and mark (`strip`), plus `stripHtml({ current })`.
+One source, two forms: `dh-strip.mjs` exports the links, labels and mark (`strip`), plus `stripHtml({ current, label })`.
 `dh-strip.html` is generated from it by `npm run shared:stamp`, and the build fails if the two drift.
 
 - **Static HTML:** paste `dh-strip.html` as the first element in `<body>` after the skip link, include `dh-strip.css`
-  after the tokens, and say which site this is with **`data-dh-site="studio"`** (or `lightbox`, `realms`, `cull`) on `<html>`
+  after the tokens, and say which site this is with **`data-dh-site="studio"`** (or `lightbox`, `atlas`, `cull`, `realms`, `safelight`, `assay`, `sightline`, `mask`, `quarry`) on `<html>`
   or on the `<nav class="dh-strip">`. Don't edit the markup: `dh-strip.css` shows the current link from that
   attribute (no JS needed), and `dh-theme.js` adds `aria-current="page"` to it, also for strips mounted later.
   A hand-set `aria-current` still works.
+- **Label suffix (1.2.4):** the default is "· recorded output". A site whose demo runs in the visitor's browser adds
+  **`data-dh-label="browser"`** ("· runs in your browser") next to `data-dh-site`, on `<html>` or on the nav; a nav's own
+  attribute wins over `<html>`. The pasted markup carries every suffix (`<span class="dh-strip-more" data-dh-label="…">`,
+  all but the default `hidden`) and `dh-strip.css` shows the chosen one, so there is still nothing to edit and no JS.
+  The keys and texts live in `strip.labelSuffixes` (`strip.labelMore` is the default); a new suffix is a dh-shared
+  change, not a local patch. Natively, render `strip.labelSuffixes.browser` in place of `strip.labelMore`, or call
+  `stripHtml({ label: "browser" })` for a string with only that suffix.
 - **React / Next:** `import { strip } from "./vendor/dh/dh-strip.mjs"` and render it natively (the file header
   has a ready JSX snippet); set `aria-current="page"` on your own link. No HTML string replacement.
   TypeScript picks up the types from `dh-strip.d.mts` next to it (1.2.1; for a `.mjs` import TypeScript looks for `.d.mts`, not `.d.ts`).
 
 It is a `<nav aria-label="Dragonhound Labs demos">` landmark, 30 px tall. Links are same-tab (all `*.dragonhound.dev` hosts are internal: make sure your
-external-link rewriter treats them that way). Below 640 px (560 px before 1.2.2) the "Dragonhound Labs" text and "· recorded output" are
-visually hidden (still read out) and, as a last resort, the bar scrolls sideways instead of wrapping.
+external-link rewriter treats them that way). Below 1024 px (1.2.8; 968 px in 1.2.7, 880 px in 1.2.5, 720 px in 1.2.4, 640 px in 1.2.2 and 1.2.3, 560 px before) the "Dragonhound Labs" text and
+the label suffix are visually hidden (still read out). Below 720 px (1.2.8; 664 px in 1.2.7, 600 px in 1.2.5) the ten links no longer fit, so the link list scrolls
+sideways on its own (1.2.5) while the mark and "Live demo" stay put; its edges fade while there is more to scroll that way
+(scroll-driven animations; browsers without them clip the list at the edge), and `dh-theme.js` scrolls the current
+site's link into view. Spacing tightens below 420 px, and below 360 px the strip text drops to 12 px. The bar never wraps.
 If your header is sticky, offset it by `var(--dh-strip-h)` or put the strip inside it.
 
 ## Theme
@@ -166,7 +177,7 @@ If your header is sticky, offset it by `var(--dh-strip-h)` or put the strip insi
 
 ## Favicons
 
-**These are the lab's own icons, for dragonhound.dev.** The **Argus apps (Studio, Lightbox, Realms, Cull) use the official
+**These are the lab's own icons, for dragonhound.dev.** The **Argus apps (Studio, Lightbox, Atlas, Cull) use the official
 favicon sets from argus-cortex `brand/`**, copied unchanged (all rights reserved), and must not use the Dragonhound
 lab favicons. So `sync-shared.mjs` leaves `favicons/` out of a vendored copy unless you pass `--with-favicons`
 (the lock records the left-out files, so `--check` and `--against` still work).
@@ -220,6 +231,78 @@ CI snippet for a target repo (GitHub Actions):
 9. Verify: 390 px and 1440 px in both themes, toggle on one subdomain and reload another (cookie `Domain=.dragonhound.dev`), zero CSP errors, Lighthouse unchanged or better.
 
 ## Changelog
+
+- **1.2.8**
+  - `dh-strip.mjs`: Quarry (`quarry`, https://quarry.dragonhound.dev/, argus-quarry) joins the strip after Mask:
+    Lightbox, Studio, Atlas, Cull, Realms, Safelight, Assay, Sightline, Mask, Quarry. `dh-strip.html`, the current-site
+    rules in `dh-strip.css` and the `DhSite` type follow.
+  - `dh-strip.css`: ten links, the current one semibold, and the longer suffix need 955 px in Chromium with Linux system
+    fonts. The nine-link bar of 1.2.7 measured about 60 px wider elsewhere (961 px against 900 px here), so the phone
+    layout (mark only, short label) applies below 1024 px (was 968 px), leaving room for wider fonts. Without the name
+    and suffix the ten links need 679 px, so the link list scrolls sideways below 720 px (was 664 px). The 420 px and
+    360 px tightening is unchanged. Measured in Chromium at every width from 320 to 1030 px and at 1280 and 1440 px,
+    both suffixes, each site current: no page or bar overflow, "Live demo" always on screen, the current link always
+    in view, links at least 25 px wide.
+  - `dh-theme.js` and the landing's external-link rule: comments name the new site. The test page has the new link
+    and the new phone width. The README's opening list names Mask and Quarry, and its strip section gives the current
+    breakpoints (it still gave 1.2.5's).
+
+- **1.2.7**
+  - `dh-strip.mjs`: Mask (`mask`, https://mask.dragonhound.dev/, argus-mask) joins the strip after Sightline: Lightbox,
+    Studio, Atlas, Cull, Realms, Safelight, Assay, Sightline, Mask. `dh-strip.html`, the current-site rules in
+    `dh-strip.css` and the `DhSite` type follow.
+  - `dh-strip.css`: nine links, the current one semibold, and the longer suffix need about 961 px, so the phone layout
+    (mark only, short label) applies below 968 px (was 880 px), and the link list scrolls sideways below 664 px (was
+    600 px), where nine links stop fitting. The 420 px and 360 px tightening is unchanged. Measured in Chromium at every
+    width from 320 to 999 px and at 1280 and 1440 px, both suffixes, each site current: no page or bar overflow,
+    "Live demo" always on screen, the current link always in view, links at least 25 px wide.
+  - `dh-theme.js` and the landing's external-link rule: comments name the new site. The test page has the new link
+    and the new phone width. The README's header names the current version again (it still said 1.2.5 in 1.2.6).
+
+- **1.2.6**
+  - `dh-strip.css`: `.dh-strip` is `position: relative`. Below 880 px the name and the label suffix are visually
+    hidden with `position: absolute`. In an unpositioned bar they escaped its scroll box, sitting where the bar's
+    content ends, so the whole page scrolled sideways whenever that content was a few px wider than the screen
+    (between 600 and 879 px, depending on the browser's fonts: 6 px at 604 px in CI's Chrome). The test page checks
+    the bar is positioned.
+
+- **1.2.5**
+  - `dh-strip.mjs`: Safelight (`safelight`, https://safelight.dragonhound.dev/, argus-darkroom), Assay (`assay`,
+    https://assay.dragonhound.dev/, argus-mint) and Sightline (`sightline`, https://sightline.dragonhound.dev/,
+    argus-survey) join the strip after Realms: Lightbox, Studio, Atlas, Cull, Realms, Safelight, Assay, Sightline.
+    `dh-strip.html`, the current-site rules in `dh-strip.css` and the `DhSite` type follow.
+  - `dh-strip.css`: eight links and the longer suffix need about 860 px, so the phone layout (mark only, short label)
+    applies below 880 px (was 720 px). Below 600 px the link list scrolls sideways inside the strip instead of the
+    whole bar, with edge fades driven by `animation-timeline: scroll()` that show only while there is more to scroll
+    that way (none when the list fits; no fade, just a clip, without scroll-driven animation support). The 420 px and
+    360 px tightening is unchanged. Measured in Chromium at every width from 320 to 1440 px, both suffixes, each site
+    current: no page or bar overflow, "Live demo" always on screen, the current link always in view, links at least
+    25 px wide.
+  - `dh-theme.js`: when it marks the current site's link and the link list scrolls, it scrolls that link into view
+    (the list only, never the page). Its comments and this README name the new sites.
+
+- **1.2.4**
+  - `dh-strip.mjs`: Realms (`realms`, https://realms.dragonhound.dev/), the argus-atlas minigame, joins the strip after
+    Cull: Lightbox, Studio, Atlas, Cull, Realms. `dh-strip.html`, the current-site rules in `dh-strip.css` and the
+    `DhSite` type follow.
+  - Label suffix option: `data-dh-label="browser"` on `<html>` or the nav shows "Live demo · runs in your browser"
+    instead of the default "· recorded output", without editing the pasted strip. `dh-strip.mjs` gains
+    `labelSuffixes`, `defaultLabel`, `stripHtml({ label })` and `labelSuffixCss()`; `dh-strip.html` now carries both
+    suffix spans (the non-default one `hidden`), and `--stamp` generates the matching rules into a second
+    `@generated` block in `dh-strip.css`. Types: `DhLabel`. The default output is unchanged.
+  - `dh-strip.css`: five links and the longer suffix need about 680 px, so the phone layout applies below 720 px
+    (was 640 px), the tight spacing below 420 px (was 380 px) with 3 px link padding, and below 360 px the strip
+    text is 12 px with 2 px link padding. Measured in Chromium at every width from 320 to 1440 px with both suffixes:
+    no sideways scroll; the closest fit is about 10 px of spare room at 320 px. Links stay at least 24 px wide.
+  - Comments in `dh-theme.js` and `sync-shared.mjs` and this README name Realms.
+
+- **1.2.3**
+  - `dh-strip.mjs`: the Realms link becomes **Atlas** (`atlas`, https://atlas.dragonhound.dev/). The painted-map demo
+    moved to atlas.dragonhound.dev; realms.dragonhound.dev is kept for the Realms minigame and redirects to Atlas until
+    it ships. Order is unchanged: Lightbox, Studio, Atlas, Cull. `dh-strip.html`, the current-site rules in
+    `dh-strip.css` and the `DhSite` type in `dh-strip.d.mts` follow (`"realms"` is replaced by `"atlas"`), so the
+    static demo now sets `data-dh-site="atlas"`. "Atlas" is one character shorter than "Realms", so the 1.2.2 breakpoints still fit.
+  - Comments in `dh-theme.js` and `sync-shared.mjs` and this README name Atlas.
 
 - **1.2.2**
   - `dh-strip.mjs`: Cull (`cull`, https://cull.dragonhound.dev/) joins the strip after Realms, so the Cull demo marks

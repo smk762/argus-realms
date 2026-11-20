@@ -6,7 +6,7 @@ import h3
 import psycopg
 
 from atlas_realms.rules.beacon import Beacon, round_after
-from atlas_realms.rules.chunks import cell_chunks
+from atlas_realms.rules.chunks import cell_chunks, lookahead
 from atlas_realms.rules.dice import secret_commitment
 from atlas_realms.rules.movement import hex_minutes
 from atlas_realms.rules.tunables import DEFAULT
@@ -150,7 +150,12 @@ def test_fog_queues_bakes_for_every_live_style(db_url):
         tick(c)
         jobs = c.execute("SELECT count(*), count(DISTINCT style), max(priority) FROM bake_jobs").fetchone()
         chunks = set(cell_chunks(fogged, DEFAULT.chunk_zoom))
-        assert jobs[1] == 2 and jobs[2] == 2 and jobs[0] >= 2 * 9 * len(chunks) // len(chunks)
+        assert jobs[1] == 2 and jobs[2] == 2
+        queued = set(c.execute("SELECT style, z, x, y FROM bake_jobs").fetchall())
+        styles = {s for s, *_ in queued}
+        around = {n for ch in chunks for n in lookahead(ch, DEFAULT.lookahead)}
+        assert {(s, *ch) for s in styles for ch in chunks} <= queued  # every chunk of the fogged hex, in both styles
+        assert queued <= {(s, *ch) for s in styles for ch in around}  # and nothing beyond their lookahead
         assert c.execute("SELECT playable FROM hexes WHERE h3 = %s::h3index", (fogged,)).fetchone()[0] is False
 
 

@@ -1,0 +1,51 @@
+{
+ "_comment": "The arena's maps, first = the default. Paths are relative to the repo root; `tiles` is the exported tile set build.py paints from (atlas_realms.tiles: <style>/<z>/<x>/<y>.png + manifest.json), not in git. Spawns are lat,lng.",
+ "regions": [
+  {
+   "id": "cook-strait",
+   "title": "Cook Strait",
+   "place": "New Zealand",
+   "manifest": "arena/world/cook-strait.json",
+   "outline": "data/nz_mainland.geojson",
+   "tiles": "var/tiles-areas/cook-strait",
+   "spawns": [
+    [
+     -41.2865,
+     174.7762
+    ],
+    [
+     -41.2906,
+     174.001
+    ]
+   ],
+   "news": {
+    "paper": "The Strait Courier",
+    "on": "on the Strait",
+    "where": "the Strait"
+   }
+  },
+  {
+   "id": "iceland",
+   "title": "Iceland",
+   "place": "Iceland",
+   "manifest": "arena/world/iceland.json",
+   "outline": "data/iceland.geojson",
+   "tiles": "var/tiles-areas/iceland",
+   "spawns": [
+    [
+     64.1466,
+     -21.9426
+    ],
+    [
+     65.6835,
+     -18.0878
+    ]
+   ],
+   "news": {
+    "paper": "The Saga Courier",
+    "on": "across the island",
+    "where": "the island"
+   }
+  }
+ ]
+}

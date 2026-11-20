@@ -44,3 +44,17 @@ def test_a_busy_night_rounds_up_the_repeats():
     r = digest(sieges, names, 1, 0, 100, {f"h{i}": (None, 1) for i in range(6)})
     assert "Warden's tier-1 city" in r["stories"][0]["text"]
     assert "(×" in r["stories"][1]["text"]  # the same brief twice is said once
+
+
+def test_your_shield_reads_in_the_second_person():
+    r = digest([battle(10, 2, 1, "attacker_won", shield=40)], NAMES, 1, 0, 100)
+    assert "Your shield soaked 40" in r["stories"][0]["text"] and "You's" not in r["stories"][0]["text"]
+    r = digest([battle(10, 1, 2, "attacker_won", shield=40)], NAMES, 1, 0, 100)
+    assert "Raider's shield soaked 40" in r["stories"][0]["text"]
+
+
+def test_an_ownerless_garrison_has_no_kill_streak():
+    sieges = [battle(10 + i, 2, None, "defender_won", garrison=True, hex=f"h{i}") for i in range(3)]
+    r = digest(sieges, NAMES, 1, 0, 100)
+    assert not any("tear" in s["headline"] for s in r["stories"])
+    assert None not in r["stats"].get("kills", {})

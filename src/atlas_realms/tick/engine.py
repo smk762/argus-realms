@@ -44,7 +44,6 @@ Open questions decided here for now, each easy to change:
 - walking fees (l_walk) are charged per hex entered, clipped to what the player has.
 """
 
-import copy
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -91,10 +90,10 @@ class TickOutput:
 
 
 class _Tick:
-    """Working state for one tick. Steps mutate `w`; the caller's world is a deep copy."""
+    """Working state for one tick. Steps mutate `w`; the caller's world is a deep copy (`World.snapshot`)."""
 
     def __init__(self, world: World, secret: bytes, t: Tunables, beacon: bytes | None = None) -> None:
-        self.w = copy.deepcopy(world)
+        self.w = world.snapshot()
         self.w.tick += 1
         self.tick = self.w.tick
         self.secret = secret
@@ -256,10 +255,13 @@ class _Tick:
             elif o.kind == "move":
                 u.pursue, u.hunting = None, False
                 to = str(o.payload.get("to"))
+                if to not in self.w.hexes:
+                    results[o.id] = "unreachable"
+                    continue
                 if u.shield_hp and (self.enemies_on(to, u.user_id) or self.garrisoned(to, u.user_id)):
                     results[o.id] = "can't attack while shielded"
                     continue
-                path = find_path(u.hex, str(o.payload.get("to")), self.cost_for(u), floor=self.floor_for(u))
+                path = find_path(u.hex, to, self.cost_for(u), floor=self.floor_for(u))
                 if path is None:
                     results[o.id] = "unreachable"
                     continue
@@ -285,7 +287,13 @@ class _Tick:
         if missing <= 0:
             return "already full"
         fee = self.t.fee_repair or 0
-        want = missing if hp is None else max(0, min(int(hp), missing))
+        if hp is None:
+            want = missing
+        else:
+            try:
+                want = max(0, min(int(hp), missing))
+            except (TypeError, ValueError, OverflowError):
+                return "bad hp"
         afford = want if fee == 0 else min(want, self.w.users[user_id].treasury // fee)
         if afford <= 0:
             return "not enough coins"
@@ -322,7 +330,7 @@ class _Tick:
         day = _ticks(86400, self.t)
         try:
             start, stop = int(start) % day, int(stop) % day
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return "bad time"
         if start == stop:
             return "bad time"
@@ -347,7 +355,7 @@ class _Tick:
             me.nemesis_user, me.nemesis_clan = them.id, None
         else:
             clans = {x.clan_id for x in w.users.values() if x.clan_id is not None}
-            if clan not in clans or clan == me.clan_id:
+            if not isinstance(clan, int) or clan not in clans or clan == me.clan_id:
                 return "not a valid nemesis"
             me.nemesis_user, me.nemesis_clan = None, clan
         me.nemesis_tick = self.tick
@@ -499,7 +507,11 @@ class _Tick:
             ]
             if any(x.covers(me) for x in mine):
                 return "this bot is hunting you: outbid its contract instead"
-        price = max(quote(w, user_id, bot, kind, t), int(p.get("offer") or 0) * 1000)
+        try:
+            offer = int(p.get("offer") or 0)
+        except (TypeError, ValueError, OverflowError):
+            return "bad offer"
+        price = max(quote(w, user_id, bot, kind, t), offer * 1000)
         start = p.get("start")
         if isinstance(start, int) and start > self.tick:
             c.start = start
@@ -586,7 +598,7 @@ class _Tick:
 
     def _order_class(self, u: Unit, name) -> str:
         t = self.t
-        if name not in t.classes:
+        if not isinstance(name, str) or name not in t.classes:
             return "unknown class"
         if name == u.unit_class:
             return "already that class"
@@ -923,7 +935,9 @@ def city_price(w: World, buyer: int, h: Hex, tick: int, t: Tunables = DEFAULT) -
 
 def flip_needed(h: Hex, tick: int, t: Tunables = DEFAULT) -> int:
     """Ticks an enemy must hold an owned hex (garrison beaten) to take it: longer the longer it was held."""
-    return min(t.x_max, max(t.x_min, round((tick - (h.owner_since_tick or tick)) * t.r_flip)))
+    return min(
+        t.x_max, max(t.x_min, round((tick - (tick if h.owner_since_tick is None else h.owner_since_tick)) * t.r_flip))
+    )
 
 
 def _new_hunt_day(u: Unit, tick: int, t: Tunables) -> None:

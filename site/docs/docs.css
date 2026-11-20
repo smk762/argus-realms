@@ -1,0 +1,51 @@
+/* /docs/: the argus-atlas docs rendered at build time (scripts/atlas_docs.py). A file, not an inline <style>, so
+   the CSP needs no new hash. Colours and sizes come from the shared tokens (vendor/dh/dh-tokens.css), as on the map;
+   text never goes below --dh-text-2xs (12 px). */
+:root { --dh-accent: #8a5a2b; --dh-on-accent: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --dh-accent: #e0a84f; --dh-on-accent: #0d1214; }
+}
+:root[data-theme="dark"] { --dh-accent: #e0a84f; --dh-on-accent: #0d1214; }
+
+html { scroll-padding-top: calc(var(--dh-strip-h) + 12px); }
+body { margin: 0; background: var(--dh-bg); color: var(--dh-text); font: var(--dh-text-sm)/1.6 var(--dh-font); }
+a { color: var(--dh-accent); }
+:focus-visible { outline: var(--dh-focus-ring); outline-offset: var(--dh-focus-offset); }
+.sr-only { position: absolute; clip-path: inset(50%); overflow: hidden; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; white-space: nowrap; }
+.skip { position: absolute; left: 8px; top: 4px; z-index: 10; padding: 4px 10px; background: var(--dh-surface); color: var(--dh-text); border-radius: var(--dh-radius-md); }
+.skip:not(:focus) { clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; white-space: nowrap; }
+
+.docs-head, .docs-body { max-width: 72rem; margin: 0 auto; padding-inline: 16px; box-sizing: border-box; }
+.docs-head { padding-block: 20px 8px; border-bottom: 1px solid var(--dh-border); }
+.docs-head h1 { font-size: var(--dh-text-xl); margin: 4px 0 6px; }
+.docs-head p { margin: 4px 0; color: var(--dh-muted); }
+.docs-head .back { font-size: var(--dh-text-xs); }
+
+.docs-body { display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 32px; padding-block: 16px 48px; }
+.toc { position: sticky; top: calc(var(--dh-strip-h) + 12px); align-self: start; max-height: calc(100vh - var(--dh-strip-h) - 24px); overflow-y: auto; font-size: var(--dh-text-xs); }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 4px 0; }
+.toc ul ul { padding-left: 12px; font-size: var(--dh-text-2xs); }
+.toc ul ul a { color: var(--dh-muted); }
+@media (max-width: 760px) {
+  .docs-body { grid-template-columns: minmax(0, 1fr); }
+  .toc { position: static; max-height: none; border-bottom: 1px solid var(--dh-border); padding-bottom: 12px; }
+}
+
+main:focus { outline: none; }
+/* The sr-only "(opens in new tab)" cues are 1 px boxes whose nowrap text still counts towards the page width when a
+   link ends a line on a phone: clip sideways overflow here (clip, not hidden: no scroll box, so nothing else changes)
+   and let long words wrap so no real text is cut. pre and table scroll on their own. */
+main { overflow-x: clip; overflow-wrap: break-word; }
+.doc { border-bottom: 1px solid var(--dh-border); padding-bottom: 24px; margin-bottom: 24px; }
+.doc h2 { font-size: var(--dh-text-lg); margin: 8px 0 12px; }
+.doc h3 { font-size: var(--dh-text-base); margin: 24px 0 8px; }
+.doc h4, .doc h5, .doc h6 { font-size: var(--dh-text-sm); margin: 16px 0 6px; }
+.doc img { max-width: 100%; height: auto; border-radius: var(--dh-radius-md); }
+.doc code, .doc pre { font-family: var(--dh-mono); }
+.doc code { font-size: 0.92em; background: color-mix(in srgb, var(--dh-text) 7%, transparent); padding: 0 3px; border-radius: 3px; overflow-wrap: anywhere; }
+.doc pre { overflow-x: auto; padding: 10px 12px; border: 1px solid var(--dh-border); border-radius: var(--dh-radius-md); background: var(--dh-surface); font-size: var(--dh-text-xs); }
+.doc pre code { background: none; padding: 0; overflow-wrap: normal; }
+.doc table { display: block; overflow-x: auto; border-collapse: collapse; font-size: var(--dh-text-xs); margin: 12px 0; }
+.doc th, .doc td { border: 1px solid var(--dh-border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.doc blockquote { margin: 12px 0; padding-left: 12px; border-left: 3px solid var(--dh-border); color: var(--dh-muted); }

@@ -1,0 +1,48 @@
+name: argus-atlas drift
+
+# The sync rule (argus-studio#169): Atlas's docs, its tiles and argus-atlas agree at argus-atlas `dev` HEAD.
+# docs/atlas/sync.json records the commit the docs were imported at, and the static build refuses tiles baked at
+# any other. When argus-atlas `dev` moves on, this opens an issue (or comments on the open one), so a re-bake
+# and the docs import (`python scripts/atlas_docs.py import --atlas <checkout>`) land together.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the imported docs with argus-atlas dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          imported=$(jq -r .atlas.commit docs/atlas/sync.json)
+          head=$(gh api repos/smk762/argus-atlas/commits/dev --jq .sha)
+          echo "imported ${imported:0:7}, argus-atlas dev ${head:0:7}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$imported" = "$head" ]; then
+            echo "In sync." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          title="argus-atlas dev moved past the imported docs"
+          body="argus-atlas \`dev\` is at [${head:0:7}](https://github.com/smk762/argus-atlas/commit/$head); Atlas's docs and tiles are at [${imported:0:7}](https://github.com/smk762/argus-atlas/commit/$imported) ([changes](https://github.com/smk762/argus-atlas/compare/$imported...$head)). Import the docs at the new commit (\`make atlas-docs\`), re-pin the plans (\`make bake-plans\`) and re-bake, in one PR: \`make static\` refuses tiles and docs of different commits."
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            # Comment only when dev moved again since the issue last named its head.
+            seen=$(gh issue view "$open" --repo "$GITHUB_REPOSITORY" --json body,comments --jq '[.body, .comments[].body] | join("\n")')
+            if grep -q "$head" <<<"$seen"; then
+              echo "Already flagged in #$open." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
+          echo "Drift flagged." >> "$GITHUB_STEP_SUMMARY"

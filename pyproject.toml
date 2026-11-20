@@ -22,7 +22,8 @@ dependencies = [
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.27", "pmtiles>=3.3", "pillow>=10.0"]
 # httpx2 backs starlette's TestClient (the httpx path is deprecated), as in argus-atlas.
-dev = ["pytest>=8.0", "ruff==0.15.16", "httpx>=0.27", "httpx2>=2.7"]
+# markdown-it-py renders the imported argus-atlas docs into docs.html at build time (scripts/atlas_docs.py).
+dev = ["pytest>=8.0", "ruff==0.15.16", "httpx>=0.27", "httpx2>=2.7", "markdown-it-py>=3.0,<5"]
 
 [tool.hatch.version]
 source = "vcs"

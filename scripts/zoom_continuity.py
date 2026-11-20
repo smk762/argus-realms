@@ -62,8 +62,11 @@ def lum(rgba: np.ndarray) -> np.ndarray:
     return rgba[..., 0] * 0.299 + rgba[..., 1] * 0.587 + rgba[..., 2] * 0.114
 
 
-def compare(style: Path, p: int, c: int) -> dict:
+def compare(style: Path, p: int, c: int) -> dict | None:
+    """Parent zoom `p` against child zoom `c` over the parent's footprint; None if `p` has no tiles."""
     tiles = [(int(t.parent.name), int(t.stem)) for t in style.glob(f"{p}/*/*.png")]
+    if not tiles:
+        return None
     xs, ys = [t[0] for t in tiles], [t[1] for t in tiles]
     x0, y0, nx, ny = min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
     f = 2 ** (c - p)
@@ -94,7 +97,11 @@ def main() -> None:
             style = man.parent / st["name"]
             for p, c in [(base, base + 1), (base + 1, base + 2), (base, base + 2), (base - 1, base)]:
                 if c <= top:
-                    r = {"area": man.parent.name, "style": st["name"], **compare(style, p, c)}
+                    got = compare(style, p, c)
+                    if got is None:
+                        print(f"{style}: no z{p} tiles, z{p}->z{c} skipped", file=sys.stderr)
+                        continue
+                    r = {"area": man.parent.name, "style": st["name"], **got}
                     rows.append(r)
                     print(json.dumps(r), file=sys.stderr)
     if a.json:

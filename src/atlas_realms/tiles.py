@@ -1,12 +1,17 @@
 """Export baked chunks as static tiles for the client.
 
-    python -m atlas_realms.tiles var/maps var/tiles
+    python -m atlas_realms.tiles var/maps/areas/cook-strait var/tiles-areas/cook-strait   # or `make tiles`: every area
 
 Reads `<maps>/<style>/<job>/fantasy.pmtiles` (one archive per chunk, as argus-atlas writes them) and
 writes `<out>/<style>/<z>/<x>/<y>.png` plus `<out>/manifest.json`. A new chunk is only new files,
 so the output can sit behind a CDN as is. argus-atlas cuts neighbouring archives without overlap;
 a tile that two archives disagree on is an error. Place names (`labels.geojson`, written by
 `argus-atlas labels --job` for one style's chunks) are merged into `<out>/labels.geojson`.
+
+Each style's manifest entry also says how it was painted (`bake`: recipe, preset, checkpoint, denoise, seeds, the
+argus-atlas commands that made it and the argus-atlas builds that ran them), read from the chunks' `job.json`, so the
+demo's "How it was made" never hard-codes what a bake did. `atlas` lists every argus-atlas build across the styles;
+a bake from before argus-atlas 0.4 recorded none and shows as `{"version": null, "commit": null}`.
 
 Below the chunks' own zoom, overview tiles down to `overview_min` are built by shrinking each 2 x 2
 block of the zoom above into one tile, so the painted map still shows when zoomed out. (A general
@@ -16,10 +21,12 @@ mosaic feature: a candidate for argus-atlas once more than this game needs it.)
 import argparse
 import io
 import json
+import math
 import sys
 import time
 from pathlib import Path
 
+from argus_atlas.chunks import chunk_bbox
 from PIL import Image
 from pmtiles.reader import MmapSource, Reader, all_tiles
 
@@ -28,23 +35,71 @@ TILE_PX = 256
 Tile = tuple[int, int, int]
 
 
-def _chunk_of(job_dir: Path) -> Tile | None:
+def _sidecar(job_dir: Path) -> dict | None:
     try:
-        c = json.loads((job_dir / "job.json").read_text()).get("chunk")
+        job = json.loads((job_dir / "job.json").read_text())
     except (OSError, ValueError):
         return None
+    return job if isinstance(job, dict) else None
+
+
+def _chunk_of(job: dict | None) -> Tile | None:
+    c = (job or {}).get("chunk")
     return (c["z"], c["x"], c["y"]) if c else None
 
 
+def _distinct(values) -> list:
+    return sorted({v for v in values if v is not None}, key=str)
+
+
+def bake_summary(jobs: list[dict]) -> dict:
+    """How one style's chunks were painted, from their `job.json`: every distinct value, so a style baked in two
+    sittings with different knobs says so instead of showing one of them."""
+    baked = [(j, j["bake"]) for j in jobs if j.get("bake")]
+    bakes = [b for _, b in baked]
+    params = [b.get("params") or {} for b in bakes]
+    seeds = [p["seed"] for p in params if isinstance(p.get("seed"), int)]
+    builds = {
+        (g.get("version"), g.get("commit"))
+        for g in ((b.get("generator") or j.get("generator") or {}) for j, b in baked)
+    }
+    keys = {src.get("key") for j in jobs for src in (j.get("sources") or [])}
+    commands = [c for c, used in (("dem", "copernicus-glo30" in keys), ("osm", "openstreetmap" in keys)) if used]
+    commands += ["chunk"] + (["labels"] if any(j.get("labels") for j in jobs) else [])
+    chunk = [j["chunk"] for j in jobs if j.get("chunk")]
+    return {
+        "recipe": _distinct(p.get("recipe") for p in params),
+        "preset": _distinct(p.get("preset") for p in params),
+        "checkpoint": _distinct((b.get("checkpoint") or {}).get("name") for b in bakes),
+        "lora": _distinct((b.get("lora") or {}).get("name") for b in bakes),
+        "denoise": _distinct(p.get("denoise") for p in params),
+        "steps": _distinct(p.get("steps") for p in params),
+        "cfg": _distinct(p.get("cfg") for p in params),
+        "seeds": [min(seeds), max(seeds)] if seeds else None,
+        "chunks": len(bakes),
+        "chunk": {
+            "zoom": _distinct(c.get("z") for c in chunk),
+            "size": _distinct(c.get("size") for c in chunk),
+            "margin": _distinct(c.get("margin") for c in chunk),
+        },
+        "commands": commands,
+        "aligned": all(b.get("aligned") for b in bakes) if bakes else None,
+        "atlas": [{"version": v, "commit": c} for v, c in sorted(builds, key=str)],
+    }
+
+
 def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
-    """Write one style's tiles. Returns the chunks exported and the zoom range and bounds seen."""
+    """Write one style's tiles. Returns the chunks exported and the zoom range, bounds and bake summary seen."""
     chunks: set[Tile] = set()
     zooms: set[int] = set()
     bounds = [180.0, 90.0, -180.0, -90.0]
+    jobs: list[dict] = []
     for archive in sorted(style_dir.glob("*/fantasy.pmtiles")):
-        chunk = _chunk_of(archive.parent)
+        job = _sidecar(archive.parent)
+        chunk = _chunk_of(job)
         if chunk is None:
             continue
+        jobs.append(job)
         with archive.open("rb") as fh:
             source = MmapSource(fh)
             h = Reader(source).header()
@@ -64,7 +119,8 @@ def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
             max(bounds[3], h["max_lat_e7"] / 1e7),
         ]
         chunks.add(chunk)
-    return chunks, {"minzoom": min(zooms, default=0), "maxzoom": max(zooms, default=0), "bounds": bounds}
+    meta = {"minzoom": min(zooms, default=0), "maxzoom": max(zooms, default=0), "bounds": bounds}
+    return chunks, {**meta, "bake": bake_summary(jobs)}
 
 
 def export_labels(maps: Path, out: Path) -> int:
@@ -83,6 +139,8 @@ def export_labels(maps: Path, out: Path) -> int:
     if features:
         out.mkdir(parents=True, exist_ok=True)
         (out / "labels.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": features}))
+    else:
+        (out / "labels.geojson").unlink(missing_ok=True)  # an earlier export's names would no longer match the tiles
     return len(features)
 
 
@@ -109,6 +167,16 @@ def build_overviews(style_out: Path, from_zoom: int, overview_min: int) -> int:
     return written
 
 
+def chunks_bounds(chunks) -> list[float]:
+    """[west, south, east, north] of the chunks' own tile edges, rounded inward to 1e-7 degrees. The PMTiles headers
+    store bounds in 1e-7 steps rounded outward, and a raster source given an east edge of -11.2499999 asks for a whole
+    tile column past the painting (404s at Iceland's edge)."""
+    boxes = [chunk_bbox(*c) for c in chunks]
+    w, s = min(b.west for b in boxes), min(b.south for b in boxes)
+    e, n = max(b.east for b in boxes), max(b.north for b in boxes)
+    return [math.ceil(w * 1e7) / 1e7, math.ceil(s * 1e7) / 1e7, math.floor(e * 1e7) / 1e7, math.floor(n * 1e7) / 1e7]
+
+
 def export(maps: Path, out: Path, patron_only: set[str] = frozenset(), overview_min: int = 5) -> dict:
     """Export every style under `maps` and write the manifest. A chunk is ready when every style has it."""
     styles, per_style, info = [], {}, []
@@ -125,17 +193,19 @@ def export(maps: Path, out: Path, patron_only: set[str] = frozenset(), overview_
     labels = export_labels(maps, out)
     manifest = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "styles": [{"name": s, "patron_only": s in patron_only, "chunks": len(per_style[s])} for s in styles],
+        "styles": [
+            {"name": s, "patron_only": s in patron_only, "chunks": len(per_style[s]), "bake": m["bake"]}
+            for s, m in zip(styles, info, strict=True)
+        ],
+        # Every argus-atlas build behind these tiles; the static build checks it against the imported docs.
+        "atlas": [
+            json.loads(b) for b in sorted({json.dumps(b, sort_keys=True) for m in info for b in m["bake"]["atlas"]})
+        ],
         "ready_chunks": sorted(ready),
         "minzoom": min((m["minzoom"] for m in info), default=0),
         "chunk_zoom": min((m.get("chunk_zoom", m["minzoom"]) for m in info), default=0),
         "maxzoom": max((m["maxzoom"] for m in info), default=0),
-        "bounds": [
-            min((m["bounds"][0] for m in info), default=0),
-            min((m["bounds"][1] for m in info), default=0),
-            max((m["bounds"][2] for m in info), default=0),
-            max((m["bounds"][3] for m in info), default=0),
-        ],
+        "bounds": chunks_bounds(set().union(*per_style.values())) if per_style else [0, 0, 0, 0],
         "tile_url": "tiles/{style}/{z}/{x}/{y}.png",
         "labels_url": "tiles/labels.geojson" if labels else None,
         "attribution": "Map painted by argus-atlas from Copernicus GLO-30 and © OpenStreetMap contributors",

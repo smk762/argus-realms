@@ -16,10 +16,11 @@ import h3
 
 from atlas_realms.bots import PERSONALITIES, Bot, decide
 from atlas_realms.fog import fog_geojson
-from atlas_realms.news import digest, events_of
+from atlas_realms.news import STRAIT, digest, events_of
+from atlas_realms.rules.chunks import at_zoom
 from atlas_realms.rules.classes import CLASSES
 from atlas_realms.rules.tunables import DEFAULT, Tunables
-from atlas_realms.seed import land_cells, plan_hexes
+from atlas_realms.seed import land_cells, plan_hexes, sea_chunks
 from atlas_realms.tick.engine import (
     SERVICES,
     BattleRecord,
@@ -46,11 +47,17 @@ EVENTS = 5000  # news events kept for 'while you were away' reports
 # The solo arena's rules: the shared ones; Session.new sets the hex cap from the map (PvP keeps DEFAULT's).
 SOLO = DEFAULT
 MAX_CATCH_UP = 120  # ticks run per request at most, so a long-idle tab doesn't stall the server
+MAX_PENDING = 100  # the human's orders queued for one tick (a paused game queues them all for the next)
+RESULTS = 50  # order results kept for state() (it shows the last 10)
 DEFAULT_ROSTER = ("settler", "raider", "warden", "corsair", "sapper", "jackal", "rival", "reaver")
 
 
 def build_world(manifest: dict, outline: Path, spawns: list[tuple[float, float]], t: Tunables = DEFAULT) -> World:
-    ready = {tuple(c) for c in manifest["ready_chunks"]}
+    """The solo world: the baked chunks plus the open sea inside the painted block (`sea_chunks`), which needs no
+    painting, so a strait between baked coasts is open water to play on rather than fog. Chunks baked at another zoom
+    (Iceland's z7) are mapped onto the game's chunk zoom first."""
+    baked = at_zoom(manifest["ready_chunks"], t.chunk_zoom)
+    ready = baked | sea_chunks(baked, outline, t.chunk_zoom)
     rows = plan_hexes(ready, land_cells(outline, t.h3_resolution), spawns, t)
     hexes = {
         r["h3"]: Hex(h3=r["h3"], zone=r["zone"], terrain=r["terrain"], tier=r["tier"], playable=r["playable"])
@@ -68,6 +75,8 @@ class Session:
     tick_every: float = 2.0  # the speed setting: nominal wall seconds per game tick (the real period is / PACE)
     paused: bool = False
     t: Tunables = SOLO
+    region: str = ""  # which map (the arena's regions.json id); the server's solo mode has only Cook Strait
+    desk: dict = field(default_factory=lambda: dict(STRAIT))  # the news desk's paper and place names
     battles: list[tuple[int, BattleRecord]] = field(default_factory=list)  # (tick, record), newest last
     results: dict[int, str] = field(default_factory=dict)  # the human's order id -> result
     history: list[tuple[int, BattleRecord]] = field(default_factory=list)  # the human's own battles, newest last
@@ -111,8 +120,10 @@ class Session:
 
     def submit(self, kind: str, payload: dict) -> int:
         """Queue one of the human's orders for the next tick; returns its id."""
-        if kind == "class" and payload.get("class") not in CLASSES:
+        if kind == "class" and not (isinstance(payload.get("class"), str) and payload["class"] in CLASSES):
             raise ValueError("unknown class")
+        if len(self._pending) >= MAX_PENDING:
+            raise ValueError("too many orders queued")
         oid = self._next_order
         self._next_order += 1
         self._pending.append(Order(id=oid, user_id=HUMAN, kind=kind, payload=payload, seq=oid))
@@ -149,6 +160,8 @@ class Session:
         del self.events[:-EVENTS]
         mine = {o.id for o in orders if o.user_id == HUMAN}
         self.results.update({k: v for k, v in out.order_results.items() if k in mine})
+        for k in list(self.results)[:-RESULTS]:
+            del self.results[k]
         self.battles.extend((self.world.tick, b) for b in out.battles)
         del self.battles[:-50]
         units = self.world.units
@@ -161,7 +174,7 @@ class Session:
         """'While you were away': the news since tick `since`."""
         w = self.world
         cities = {c: (h.name, h.tier or 1) for c, h in w.hexes.items()}
-        return digest(self.events, self.names, HUMAN, since, w.tick, cities)
+        return digest(self.events, self.names, HUMAN, since, w.tick, cities, self.desk)
 
     def set_look(self, look: str) -> None:
         if look not in SHIELD_LOOKS:
@@ -281,7 +294,7 @@ class Session:
             "history": [self._battle(tick, b, rolls=True) for tick, b in reversed(self.history)]
             if w.users[HUMAN].subscriber
             else None,
-            "results": dict(list(self.results.items())[-10:]),
+            "results": dict(list(self.results.items())[-10:]),  # at most RESULTS
         }
 
     def _market(self) -> dict:

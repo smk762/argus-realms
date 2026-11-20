@@ -12,7 +12,9 @@ from atlas_realms.rules.combat import Outcome
 from atlas_realms.tick.engine import TickOutput
 from atlas_realms.tick.world import World
 
-PAPER = "The Strait Courier"
+# The paper and how it names its map: `on` for "All quiet on the Strait", `where` for "Around the Strait". Cook Strait's
+# is the default (the server's solo mode); the browser arena gives each region its own (arena/regions.json "news").
+STRAIT = {"paper": "The Strait Courier", "on": "on the Strait", "where": "the Strait"}
 
 
 def events_of(before: World, out: TickOutput) -> list[dict]:
@@ -49,7 +51,9 @@ def events_of(before: World, out: TickOutput) -> list[dict]:
     return events
 
 
-def digest(events: list[dict], names: dict[int, str], you: int, since: int, until: int, cities=None) -> dict:
+def digest(
+    events: list[dict], names: dict[int, str], you: int, since: int, until: int, cities=None, desk: dict = STRAIT
+) -> dict:
     """The report on (since, until]: a headline, a few stories (biggest first) and the numbers behind them.
 
     `cities` maps a hex to (name or None, tier). Your own stories always run; of the rest, the biggest of
@@ -73,6 +77,10 @@ def digest(events: list[dict], names: dict[int, str], you: int, since: int, unti
 
     def whose(uid: int | None) -> str:
         return "your" if uid == you else f"{names.get(uid, 'a stranger')}'s"
+
+    def Whose(uid: int | None) -> str:  # noqa: N802 - sentence case
+        w = whose(uid)
+        return w[0].upper() + w[1:]
 
     def does(uid: int | None, it: str, you_: str) -> str:
         """The verb that agrees with the subject: 'Raider downs', 'You down'."""
@@ -106,7 +114,7 @@ def digest(events: list[dict], names: dict[int, str], you: int, since: int, unti
         lost = e["outcome"] == Outcome.DEFENDER_WON.value
         if won and not e["garrison"]:
             kills[a] += 1
-        if lost:
+        if lost and d is not None:  # an ownerless garrison is nobody's streak
             kills[d] += 1
         mine = you in (a, d)
         if e["garrison"]:
@@ -138,7 +146,7 @@ def digest(events: list[dict], names: dict[int, str], you: int, since: int, unti
                 story(3, "siege", mine, "Stalemate at the walls", text, f"{who(a)} and {walls} fought to a draw")
             continue
         upset = won and e["attacker_hp"] < e["defender_hp"] or lost and e["defender_hp"] < e["attacker_hp"]
-        shield = f" {Who(d)}'s shield soaked {e['shield']} before it was over." if e["shield"] else ""
+        shield = f" {Whose(d)} shield soaked {e['shield']} before it was over." if e["shield"] else ""
         if won:
             text = pick(
                 [
@@ -217,15 +225,15 @@ def digest(events: list[dict], names: dict[int, str], you: int, since: int, unti
             )
             story(7, "streak", top == you, f"{Who(top)} on a {n}-kill tear", text, "")
 
-    written = _edit(stories, pick)
+    written = _edit(stories, pick, desk)
     if not written:
-        headline = pick(["All quiet on the Strait", "A quiet night: nothing to report", "Calm seas, sleeping armies"])
+        headline = pick([f"All quiet {desk['on']}", "A quiet night: nothing to report", "Calm seas, sleeping armies"])
         lead = "Not a blade drawn while you were away."
     else:
         headline = written[0]["headline"]
         lead = f"{len(battles)} battle{'s' * (len(battles) != 1)}, {len(captures)} hex{'es' * (len(captures) != 1)} changed hands."
     return {
-        "paper": PAPER,
+        "paper": desk["paper"],
         "headline": headline,
         "lead": lead,
         "stories": written,
@@ -242,8 +250,8 @@ def digest(events: list[dict], names: dict[int, str], you: int, since: int, unti
 
 
 ROUNDUPS = {
-    "siege": ["Walls fall across the Strait", "Siege season"],
-    "fight": ["Around the Strait", "Elsewhere on the field"],
+    "siege": ["Walls fall across {where}", "Siege season"],
+    "fight": ["Around {where}", "Elsewhere on the field"],
     "capture": ["Changing hands", "The map redrawn"],
     "grab": ["Land rush", "Flags in the ground"],
     "loot": ["Bounty board", "Paid in full"],
@@ -254,7 +262,7 @@ ROUNDUP_ORDER = ("capture", "siege", "fight", "grab", "loot")
 ROUNDUP_ITEMS = 4
 
 
-def _edit(stories: list[dict], pick) -> list[dict]:
+def _edit(stories: list[dict], pick, desk: dict = STRAIT) -> list[dict]:
     """The front page: every story of yours, the biggest of each other kind, and a round-up of the rest."""
     stories = sorted(stories, key=lambda s: -s["drama"])
     lead: list[dict] = [s for s in stories if s["mine"]]
@@ -273,7 +281,12 @@ def _edit(stories: list[dict], pick) -> list[dict]:
             more = len(briefs) - ROUNDUP_ITEMS
             text = "; ".join(briefs[:ROUNDUP_ITEMS]) + (f"; and {more} more" if more > 0 else "") + "."
             lead.append(
-                {"drama": 0, "family": family, "head": pick(ROUNDUPS[family]), "text": text[0].upper() + text[1:]}
+                {
+                    "drama": 0,
+                    "family": family,
+                    "head": pick(ROUNDUPS[family]).format(where=desk["where"]),
+                    "text": text[0].upper() + text[1:],
+                }
             )
     top = sorted((s for s in lead if s["drama"]), key=lambda s: -s["drama"])[:MAX_STORIES]
     roundups = sorted((s for s in lead if not s["drama"]), key=lambda s: ROUNDUP_ORDER.index(s["family"]))[

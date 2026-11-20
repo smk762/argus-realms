@@ -1,0 +1,59 @@
+{
+ "_comment": "The Cook Strait block (bakes/cook-strait.sh): which chunks are painted, in the shape atlas_realms.tiles writes. The browser game builds its world from this; the tiles themselves are not in git.",
+ "styles": [
+  {
+   "name": "antique",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
+   "name": "tolkien",
+   "patron_only": false,
+   "chunks": 30
+  }
+ ],
+ "ready_chunks": [
+  [10, 1006, 639],
+  [10, 1006, 640],
+  [10, 1006, 641],
+  [10, 1006, 642],
+  [10, 1006, 643],
+  [10, 1006, 644],
+  [10, 1007, 639],
+  [10, 1007, 640],
+  [10, 1007, 641],
+  [10, 1007, 642],
+  [10, 1007, 643],
+  [10, 1008, 640],
+  [10, 1008, 641],
+  [10, 1009, 639],
+  [10, 1009, 640],
+  [10, 1009, 641],
+  [10, 1010, 638],
+  [10, 1010, 639],
+  [10, 1010, 640],
+  [10, 1010, 641],
+  [10, 1010, 642],
+  [10, 1011, 638],
+  [10, 1011, 639],
+  [10, 1011, 640],
+  [10, 1011, 641],
+  [10, 1011, 642],
+  [10, 1012, 638],
+  [10, 1012, 639],
+  [10, 1012, 640],
+  [10, 1012, 641]
+ ],
+ "minzoom": 5,
+ "chunk_zoom": 10,
+ "maxzoom": 12,
+ "bounds": [
+  173.671875,
+  -42.2935641,
+  176.1328124,
+  -40.4469471
+ ],
+ "tile_url": "tiles/{style}/{z}/{x}/{y}.png",
+ "labels_url": null,
+ "attribution": "Map painted by argus-atlas from Copernicus GLO-30 and \u00a9 OpenStreetMap contributors"
+}

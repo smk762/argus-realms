@@ -1,5 +1,6 @@
 """In-memory world state for one tick: plain dataclasses, cheap to copy and compare."""
 
+import copy
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -97,6 +98,24 @@ class World:
         if ca is not None and ca == cb:
             return True
         return any(c.status == "active" and {c.bot, c.hirer} == {a, b} for c in self.contracts.values())
+
+    def snapshot(self) -> "World":
+        """An independent copy for a tick to mutate: equal to `copy.deepcopy(self)`, but it only copies what can change
+        in place. Every field of Hex, User and Contract is a scalar or a tuple, so a shallow copy of each is a deep one;
+        Unit's `path` is the one list. `ready_chunks` holds tuples. On a big map (Iceland, ~1,650 hexes and ~1,500
+        chunks) deepcopy was 95% of the tick. `test_snapshot_is_a_deep_copy` fails if a mutable field is added."""
+        units = {}
+        for k, u in self.units.items():
+            units[k] = c = copy.copy(u)
+            c.path = list(u.path)
+        return World(
+            tick=self.tick,
+            hexes={k: copy.copy(h) for k, h in self.hexes.items()},
+            units=units,
+            users={k: copy.copy(u) for k, u in self.users.items()},
+            ready_chunks=set(self.ready_chunks),
+            contracts={k: copy.copy(c) for k, c in self.contracts.items()},
+        )
 
 
 @dataclass(slots=True)

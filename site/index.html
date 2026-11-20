@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="en" data-dh-site="realms">
+<html lang="en" data-dh-site="atlas">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlas Realms</title>
-<meta name="description" content="Iceland and Réunion, painted as fantasy maps by argus-atlas and draped on a real basemap. Slide the opacity: the coastlines stay put.">
+<title>Atlas</title>
+<meta name="description" content="Cook Strait, Iceland and Réunion, painted as fantasy maps by argus-atlas and draped on a real basemap. Slide the opacity: the coastlines stay put.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Dragonhound Labs">
-<meta property="og:title" content="Atlas Realms: a painted map on real terrain">
-<meta property="og:description" content="Iceland and Réunion, painted as fantasy maps by argus-atlas and draped on a real basemap. Slide the opacity: the coastlines stay put.">
-<meta property="og:url" content="https://realms.dragonhound.dev/">
-<meta property="og:image" content="https://realms.dragonhound.dev/og.jpg">
+<meta property="og:title" content="Atlas: a painted map on real terrain">
+<meta property="og:description" content="Cook Strait, Iceland and Réunion, painted as fantasy maps by argus-atlas and draped on a real basemap. Slide the opacity: the coastlines stay put.">
+<meta property="og:url" content="https://atlas.dragonhound.dev/">
+<meta property="og:image" content="https://atlas.dragonhound.dev/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="canonical" href="https://realms.dragonhound.dev/">
+<link rel="canonical" href="https://atlas.dragonhound.dev/">
 <script src="dragonhound-console.js" defer></script>
-<!-- The argus-atlas favicon set (Realms demonstrates atlas), from argus-cortex brand/packages/atlas/favicon/, unchanged. -->
+<!-- The argus-atlas favicon set (Atlas demonstrates argus-atlas), from argus-cortex brand/packages/atlas/favicon/, unchanged. -->
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-icon.png">
@@ -39,7 +39,7 @@
   integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="app.js" defer></script>
 <style>
-  /* The panel and strip take the shared tokens; Realms overrides only the accent (its amber), in both schemes.
+  /* The panel and strip take the shared tokens; Atlas overrides only the accent (its amber), in both schemes.
      The basemap stays light whatever the theme: its ocean colour is what the sea mask samples. */
   :root { --dh-accent: #8a5a2b; --dh-on-accent: #ffffff; } /* 5.9:1 on --dh-surface */
   @media (prefers-color-scheme: dark) {
@@ -73,7 +73,10 @@
   .hint { font-size: var(--dh-text-2xs); color: var(--muted); margin: 6px 0 0; }
   kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: var(--dh-text-2xs); } /* the 12 px floor */
   details summary { cursor: pointer; color: var(--muted); font-size: var(--dh-text-2xs); margin-top: 8px; }
-  details p { font-size: var(--dh-text-2xs); color: var(--muted); margin-top: 6px; }
+  details p, details ol { font-size: var(--dh-text-2xs); color: var(--muted); margin-top: 6px; }
+  .steps { padding-left: 18px; margin-bottom: 0; }
+  .steps li { margin: 3px 0; }
+  .steps code { font-size: inherit; }
   a { color: var(--accent); }
   :focus-visible { outline: var(--dh-focus-ring); outline-offset: var(--dh-focus-offset); }
   .skip { position: absolute; left: 8px; top: 4px; z-index: 10; padding: 4px 10px; background: var(--dh-surface); color: var(--dh-text); border-radius: var(--dh-radius-md); }
@@ -139,28 +142,34 @@
 </head>
 <body>
 <a class="skip" href="#panel">Skip to the map controls</a>
-<!-- dh-strip v1.2.2 (vendor/dh/dh-strip.html), pasted unchanged. data-dh-site="realms" on <html> marks Realms current:
+<!-- dh-strip v1.2.8 (vendor/dh/dh-strip.html), pasted unchanged. data-dh-site="atlas" on <html> marks Atlas current:
      dh-strip.css styles it and dh-theme.js adds aria-current="page". The build fails if this drifts. -->
 <nav class="dh-strip" aria-label="Dragonhound Labs demos">
   <a class="dh-strip-home" href="https://dragonhound.dev/" data-dh-site="dragonhound"><svg class="dh-strip-mark" viewBox="0 0 100 100" width="18" height="18" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M48 97L40 96L34 93.5L29 91L23 86L19.5 82L15 75L12.5 67.5L11.5 60L12 53L13 47L16 40L20 34L24.5 29.5L28.5 26L34.5 23L42.5 20.5L40.5 12L40.5 6.5L42 2.5L45.5 8L49.5 12.5L54 16L58 17L61 21L66.5 26L71 28.5L74 29L76.5 29L75.5 32L73.5 34L71.5 36.5L69 38L69 34L66 35.5L63.5 35.5L65 33.5L65 32L63.5 33.5L60.5 34L60 34L61.5 32L61.5 30.5L57.5 30.5L53.5 32L59 34.5L62 37L64 37L65.5 36.5L64.5 38.5L64.5 39L66.5 39L70 38L68.5 39.5L66 41.5L63.5 42.5L61.5 42.5L62 41L61 39.5L57.5 37L54.5 35.5L50.5 35L47.5 35L41.5 37L36 40.5L31.5 45L28.5 49L26 54L26 55.5L31.5 54.5L34.5 54.5L42 57L46 57.5L47 56L48 55.5L49.5 53.5L51.5 52.5L56.5 47.5L64 46L68 49.5L69.5 53L74 56L74.5 57L74 57.5L72.5 59.5L71 60.5L71.5 63L71 64L69.5 63.5L68 64.5L65 64.5L64 65.5L62 67L61.5 69.5L60.5 70.5L59 74.5L56.5 78L56 79.5L54.5 84.5L54.5 90.5L55 91L56.5 92L59 92L63 91L67.5 89L73 85L78.5 79L81.5 72L78.5 69L83.5 56.5L84.5 52L85.5 45L87 49.5L88.5 57.5L88.5 62L88 66.5L85.5 73.5L81 81.5L76.5 86.5L70.5 91.5L63 95L56.5 96.5L48 97ZM52 91.5L51 88.5L51 79.5L50.5 79.5L48 80.5L47 82L45 85.5L44.5 90.5L45 91L50.5 92L52 92L52 91.5ZM41 88.5L42 78L37 73.5L35.5 76L35 79L35.5 81.5L37 84.5L35 85.5L40 89L41 88.5ZM33 83L32.5 77L33.5 72.5L32.5 70.5L31 69L30 70L27.5 75.5L30.5 80.5L33 83Z"/></svg><span class="dh-strip-name">Dragonhound Labs</span></a>
   <ul class="dh-strip-links">
     <li><a href="https://lightbox.dragonhound.dev/" data-dh-site="lightbox">Lightbox</a></li>
     <li><a href="https://studio.dragonhound.dev/" data-dh-site="studio">Studio</a></li>
-    <li><a href="https://realms.dragonhound.dev/" data-dh-site="realms">Realms</a></li>
+    <li><a href="https://atlas.dragonhound.dev/" data-dh-site="atlas">Atlas</a></li>
     <li><a href="https://cull.dragonhound.dev/" data-dh-site="cull">Cull</a></li>
+    <li><a href="https://realms.dragonhound.dev/" data-dh-site="realms">Realms</a></li>
+    <li><a href="https://safelight.dragonhound.dev/" data-dh-site="safelight">Safelight</a></li>
+    <li><a href="https://assay.dragonhound.dev/" data-dh-site="assay">Assay</a></li>
+    <li><a href="https://sightline.dragonhound.dev/" data-dh-site="sightline">Sightline</a></li>
+    <li><a href="https://mask.dragonhound.dev/" data-dh-site="mask">Mask</a></li>
+    <li><a href="https://quarry.dragonhound.dev/" data-dh-site="quarry">Quarry</a></li>
   </ul>
-  <p class="dh-strip-label">Live demo<span class="dh-strip-more"> · recorded output</span></p>
+  <p class="dh-strip-label">Live demo<span class="dh-strip-more" data-dh-label="recorded"> · recorded output</span><span class="dh-strip-more" data-dh-label="browser" hidden> · runs in your browser</span></p>
 </nav>
 <main>
 <div id="panel" tabindex="-1">
   <div class="title">
-    <h1>Atlas Realms</h1>
+    <h1>Atlas</h1>
     <span class="dh-badge" title="Recorded output from finished bakes; no GPU runs while you browse">Recorded</span>
     <button id="theme" type="button" data-dh-theme-toggle aria-label="Dark theme" aria-pressed="false"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
     <button id="panel-toggle" type="button" aria-expanded="false" aria-controls="panel-more">More</button>
   </div>
-  <p class="lede">Real islands as fantasy maps by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a>.<span
-    class="lede-more"> Each is laid over a real basemap: fade it out and the coastlines and ridges stay where they are.</span></p>
+  <p class="lede">Real coasts as fantasy maps by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a>.<span
+    class="lede-more"> Each is laid over a real basemap: fade it out and the coastlines stay where they are.</span></p>
 
   <p class="head pick" id="area-label">Area</p>
   <div class="styles" id="areas" role="group" aria-labelledby="area-label"></div>
@@ -172,16 +181,18 @@
   <p class="head"><label for="opacity">Painted map</label> <span id="opval">85%</span></p>
   <input id="opacity" type="range" min="0" max="100" value="85" aria-valuetext="85%">
   <p class="hint kbd-hint">Hold <kbd>space</kbd> to peek at the real map.</p>
+  <p class="hint" id="fade-hint">Fading the paint shows the real map under it (OpenFreeMap): the coastlines, lakes and
+    roads line up because the grid was fixed before the model painted (<a id="fade-docs" href="docs/">the alignment
+    gate</a>). The relief is in the paint itself: the model painted over a hillshade of the Copernicus DEM.</p>
   <button id="peek" type="button">Hold to peek</button>
 
-  <details>
+  <details id="made">
     <summary>How it was made</summary>
-    <p>Each island was baked as a block of chunks (z7 tiles for Iceland, z11 for Réunion) from Copernicus GLO-30
-      terrain and OpenStreetMap water, forest, roads and glaciers, with neighbours pasted into the margin so the seams
-      continue. GDAL fixes the coordinates before the model paints, and a job whose output moves by one pixel is
-      refused.</p>
-    <p>Each chunk is painted once at 1024 px, native two zoom levels below the opening view; every coarser zoom is
-      downsampled from that one painting, so zooming in adds detail without redrawing the map.</p>
+    <!-- Filled by app.js from tiles/areas.json: the argus-atlas commands and knobs read from this area's and style's
+         bake sidecars (job.json), each step linked to its section of the docs page (/docs/). Nothing here is hard-coded. -->
+    <ol class="steps" id="made-steps"></ol>
+    <p id="made-params"></p>
+    <p id="made-build"></p>
     <p>This page replays finished bakes: no GPU runs here. The game built on these maps,
       a solo arena on an H3 hex grid, needs its server and is not part of this demo.</p>
   </details>
