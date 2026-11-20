@@ -56,6 +56,7 @@ _stub_db_driver()
 
 from pydantic import ValidationError  # noqa: E402
 
+from atlas_realms.news import STRAIT  # noqa: E402
 from atlas_realms.protocol import Control, Looks, NewSolo, OrderIn, check_new, meta  # noqa: E402
 from atlas_realms.solo import Session, build_world  # noqa: E402
 
@@ -230,7 +231,7 @@ class Arena:
             tick_every=req.tick_every,
             secret=secret,
             region=region.id,
-            **({"desk": dict(region.desk)} if region.desk else {}),
+            desk={**STRAIT, **(region.desk or {})},  # a desk missing a key keeps Cook Strait's
         )
         s._last = now
         self.session = s

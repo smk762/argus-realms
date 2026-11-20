@@ -41,15 +41,15 @@ def at_zoom(tiles, z: int) -> set[Tile]:
     """Ready chunks as the game's chunk zoom sees them. A region baked in coarser chunks (Iceland: z7) is ready in
     every z-tile inside them; a finer chunk only counts once all of the z-tile's children are ready."""
     out: set[Tile] = set()
-    finer: dict[Tile, set[Tile]] = {}
+    finer: dict[tuple[Tile, int], set[Tile]] = {}  # (parent, child zoom) -> children
     for tz, x, y in (tuple(t) for t in tiles):
         if tz <= z:
             k = 2 ** (z - tz)
             out |= {(z, x * k + i, y * k + j) for i in range(k) for j in range(k)}
         else:
             k = 2 ** (tz - z)
-            finer.setdefault((z, x // k, y // k), set()).add((tz, x, y))
-    out |= {parent for parent, kids in finer.items() if len(kids) == 4 ** (next(iter(kids))[0] - z)}
+            finer.setdefault(((z, x // k, y // k), tz), set()).add((tz, x, y))
+    out |= {parent for (parent, tz), kids in finer.items() if len(kids) == 4 ** (tz - z)}
     return out
 
 

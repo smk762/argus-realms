@@ -67,6 +67,8 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
             check_new(body)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
+        if body.region not in (None, "cook-strait"):  # the server's solo mode has only Cook Strait
+            raise HTTPException(422, f"unknown region {body.region!r}")
         with lock:
             make_room()  # refuse before the expensive world build
         world = build_world(manifest, outline, SPAWNS)
@@ -150,7 +152,10 @@ def main() -> None:
 
     p = argparse.ArgumentParser(description="Atlas Realms API and client")
     p.add_argument(
-        "--tiles", type=Path, default=ROOT / "var" / "tiles", help="Exported tiles (python -m atlas_realms.tiles)"
+        "--tiles",
+        type=Path,
+        default=ROOT / "var" / "tiles-areas" / "cook-strait",
+        help="Exported tiles (python -m atlas_realms.tiles)",
     )
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8110)

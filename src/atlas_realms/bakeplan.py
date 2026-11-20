@@ -104,7 +104,7 @@ def run_line(image: str) -> str:
         "-e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 "
         "-e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas "
         # GPU leases (argus-iris): forwarded by name, so only what the host sets reaches the container and no
-        # secret is ever written into a plan. bakes/run.sh sets them for a background re-bake.
+        # secret is ever written into a plan. scripts/run_bakes.sh sets them for a background re-bake.
         f"{' '.join(f'-e {name}' for name in GPU_ENV)} -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml "
         "-v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro "
         f'-v $ATLAS_MAPS:/data/out/atlas {image}"'
@@ -112,10 +112,14 @@ def run_line(image: str) -> str:
 
 
 OSM_LAYERS = "water,rivers,roads,forest,urban"
+# The land test: a chunk with no H3 cell of this resolution centred on land holds no land, so it is not baked
+# (atlas_realms.seed.sea_chunks counts the same chunks as open sea).
+SEA_TEST_RES = 7
 # Values written unquoted into the plan (paths, `sed`, `test -f`) must be plain words, so a plan can't be broken or made
 # to run something else by a name with a space, `;`, `$()`, a quote or a `/`.
 WORD = re.compile(r"[A-Za-z0-9_-]+")
 IMAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/:@-]*")
+SHA = re.compile(r"[0-9a-f]{40}")
 # `dem` snaps its window inward to the GLO-30 lattice (1 arc-second); padding keeps the canvas edges covered.
 DEM_PAD_DEG = 0.01
 
@@ -182,7 +186,7 @@ def main(argv: list[str] | None = None) -> None:
         p.error("--styles and --layers must be comma-separated names of letters, digits, '-' or '_'")
     if a.image and not IMAGE.fullmatch(a.image):
         p.error("--image must be a plain image reference")
-    if not a.commit or len(a.commit) != 40:
+    if not a.commit or not SHA.fullmatch(a.commit):
         p.error("--commit must be a full argus-atlas sha (default: docs/atlas/sync.json)")
     if a.tiles:
         block = [tuple(int(v) for v in t.split("/")) for t in a.tiles.split(",") if t]
@@ -200,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
 
     notes = []
     if a.land and not a.tiles:
-        fine = land_cells(a.land, 7)
+        fine = land_cells(a.land, SEA_TEST_RES)
         with_land = {t for c in fine for t in cell_chunks(c, a.zoom)}
         skipped = sorted(set(block) - with_land)
         block = [t for t in block if t in with_land]

@@ -55,12 +55,13 @@ def _distinct(values) -> list:
 def bake_summary(jobs: list[dict]) -> dict:
     """How one style's chunks were painted, from their `job.json`: every distinct value, so a style baked in two
     sittings with different knobs says so instead of showing one of them."""
-    bakes = [j["bake"] for j in jobs if j.get("bake")]
+    baked = [(j, j["bake"]) for j in jobs if j.get("bake")]
+    bakes = [b for _, b in baked]
     params = [b.get("params") or {} for b in bakes]
     seeds = [p["seed"] for p in params if isinstance(p.get("seed"), int)]
     builds = {
         (g.get("version"), g.get("commit"))
-        for g in ((b.get("generator") or j.get("generator") or {}) for j, b in zip(jobs, bakes, strict=False))
+        for g in ((b.get("generator") or j.get("generator") or {}) for j, b in baked)
     }
     keys = {src.get("key") for j in jobs for src in (j.get("sources") or [])}
     commands = [c for c, used in (("dem", "copernicus-glo30" in keys), ("osm", "openstreetmap" in keys)) if used]
