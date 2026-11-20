@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 import h3
-from argus_atlas.chunks import chunk_grids
+from argus_atlas.addressing import chunk_grids
 from argus_atlas.mercator import mercator_to_bbox
 
 from atlas_realms.rules.chunks import Tile, cell_chunks, home_chunk, lookahead

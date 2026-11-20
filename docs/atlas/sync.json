@@ -1,11 +1,11 @@
 {
  "atlas": {
   "repo": "smk762/argus-atlas",
-  "commit": "29f1204bfd1fb258c5108da33204b9801e55a12b",
-  "version": "0.3.1.dev56+g29f1204",
+  "commit": "597cf38d0cfa485fc310d3d2f64d596f78badd57",
+  "version": "0.3.1.dev62+g597cf38",
   "ref": "origin/dev"
  },
- "imported_at": "2026-11-20T08:29:27+00:00",
+ "imported_at": "2026-11-20T11:37:08+00:00",
  "files": {
   "README.md": {
    "as": "overview.md",

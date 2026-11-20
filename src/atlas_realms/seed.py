@@ -17,7 +17,7 @@ from pathlib import Path
 
 import h3
 import psycopg
-from argus_atlas.chunks import chunk_bbox
+from argus_atlas.addressing import chunk_bbox
 from psycopg.types.json import Jsonb
 
 from atlas_realms.bakeplan import SEA_TEST_RES  # the bake plan's land test
