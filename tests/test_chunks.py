@@ -1,5 +1,5 @@
 import h3
-from argus_atlas.chunks import chunk_grids, chunk_native_zoom, validate_chunk
+from argus_atlas.addressing import chunk_grids, chunk_native_zoom, validate_chunk
 from argus_atlas.mercator import tile_bounds
 
 from atlas_realms.rules.chunks import cell_chunks, chunk_job_id, home_chunk, lookahead

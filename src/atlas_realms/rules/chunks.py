@@ -8,7 +8,7 @@ hex near a chunk edge never shows half painted and half fog.
 """
 
 import h3
-from argus_atlas.chunks import chunk_job_id, neighbour_tiles
+from argus_atlas.addressing import chunk_job_id, neighbour_tiles
 from argus_atlas.mercator import lonlat_to_mercator, tiles_covering
 
 Tile = tuple[int, int, int]

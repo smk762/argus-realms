@@ -43,7 +43,7 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 
    Queueing needs the broker in `admission: enforce`; in `observe` iris grants every lease at once, and the runner warns. Without iris, run a plan directly (`bash bakes/<area>.sh`) when the GPU is idle.
 4. **New styles:** a style is an argus-atlas recipe in `$ATLAS_HOST/recipes/`. The seven presets are antique, tolkien, imhof, watercolor, cyberpunk, minecraft and pixel. A new theme is a new recipe; keep `"z_factor": "auto"` and `"vertical_exaggeration": 1` as the other recipes do.
-5. **argus-atlas version:** the bakes use the image built at the docs' commit (§5); this repo's pip pin (`argus-atlas>=0.2.0a1,<0.3`, for chunk addressing in the game) is separate. Chunks of different reliefs or builds can't be neighbours, so every area and style is baked with one build.
+5. **argus-atlas version:** the bakes use the image built at the docs' commit (§5); this repo's pip pin (`argus-atlas>=0.4.1,<0.5`, for chunk addressing in the game, from the light `argus_atlas.addressing`) is separate. Chunks of different reliefs or builds can't be neighbours, so every area and style is baked with one build.
 
 ## 4. Adding an area to Atlas
 
