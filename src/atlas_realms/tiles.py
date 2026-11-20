@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from argus_atlas.chunks import chunk_bbox
+from argus_atlas.addressing import chunk_bbox
 from PIL import Image
 from pmtiles.reader import MmapSource, Reader, all_tiles
 

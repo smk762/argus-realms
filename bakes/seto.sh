@@ -6,15 +6,15 @@
 set -euo pipefail
 : "${ATLAS_HOST:?}" "${ATLAS_MAPS:?}" "${ATLAS_MODELS:?}"
 
-# 0. The image at argus-atlas e3f2779, the commit of the docs Atlas publishes (once per host), built from the
+# 0. The image at argus-atlas 597cf38, the commit of the docs Atlas publishes (once per host), built from the
 #    argus-atlas checkout itself (a worktree's or a git URL's build can't read the version from .git):
-#   cd <argus-atlas checkout> && git fetch && git switch --detach e3f27791bc0b276428111a90dcbd2a95c01975b9 && \
-#   docker build -t argus-atlas:e3f2779 --build-arg EXTRAS="server,cli,tiles" . && git switch -
-docker image inspect argus-atlas:e3f2779 >/dev/null 2>&1 || { echo 'build argus-atlas:e3f2779 first (step 0)'; exit 1; }
+#   cd <argus-atlas checkout> && git fetch && git switch --detach 597cf38d0cfa485fc310d3d2f64d596f78badd57 && \
+#   docker build -t argus-atlas:597cf38 --build-arg EXTRAS="server,cli,tiles" . && git switch -
+docker image inspect argus-atlas:597cf38 >/dev/null 2>&1 || { echo 'build argus-atlas:597cf38 first (step 0)'; exit 1; }
 # Chunks of another argus-atlas build here would be seamed against: re-bake into a fresh ATLAS_MAPS.
-foreign=$(grep -L e3f27791bc0b276428111a90dcbd2a95c01975b9 "$ATLAS_MAPS"/areas/seto/*/*/job.json 2>/dev/null || true)
+foreign=$(grep -L 597cf38d0cfa485fc310d3d2f64d596f78badd57 "$ATLAS_MAPS"/areas/seto/*/*/job.json 2>/dev/null || true)
 [ -z "$foreign" ] || { echo "jobs from another argus-atlas build under $ATLAS_MAPS/areas/seto/:"; echo "$foreign" | head -3; exit 1; }
-RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -e ARGUS_GPU_COORDINATOR -e ARGUS_GPU_BROKER_URL -e ARGUS_GPU_BROKER_TOKEN -e ARGUS_GPU_BROKER_FALLBACK -e ARGUS_GPU_LEASE_TIMEOUT_S -e ATLAS_GPU_PRIORITY -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:e3f2779"
+RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -e ARGUS_GPU_COORDINATOR -e ARGUS_GPU_BROKER_URL -e ARGUS_GPU_BROKER_TOKEN -e ARGUS_GPU_BROKER_FALLBACK -e ARGUS_GPU_LEASE_TIMEOUT_S -e ATLAS_GPU_PRIORITY -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:597cf38"
 
 # 1. DEM: Copernicus GLO-30 for the block plus margins, one GeoTIFF (all-sea tiles are filled with 0 m)
 [ -f "$ATLAS_HOST"/dem/seto_glo30.tif ] || \

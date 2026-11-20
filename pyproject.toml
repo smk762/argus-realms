@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 authors = [{ name = "dragonhound" }]
 dependencies = [
     # Base install is pure Python (no GDAL): the server uses it for chunk addressing only.
-    "argus-atlas>=0.2.0a1,<0.3",
+    "argus-atlas>=0.4.1,<0.5",
     "h3>=4.1",
     "psycopg[binary]>=3.2",
     "pydantic>=2.7",
