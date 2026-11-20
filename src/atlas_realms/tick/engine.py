@@ -330,7 +330,7 @@ class _Tick:
         day = _ticks(86400, self.t)
         try:
             start, stop = int(start) % day, int(stop) % day
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return "bad time"
         if start == stop:
             return "bad time"

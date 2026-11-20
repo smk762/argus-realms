@@ -20,6 +20,7 @@ import psycopg
 from argus_atlas.chunks import chunk_bbox
 from psycopg.types.json import Jsonb
 
+from atlas_realms.bakeplan import SEA_TEST_RES  # the bake plan's land test
 from atlas_realms.db import connect, migrate
 from atlas_realms.rules.chunks import Tile, cell_chunks
 from atlas_realms.rules.tunables import DEFAULT, Tunables
@@ -30,10 +31,6 @@ def land_cells(outline: Path, res: int) -> set[str]:
     for f in json.loads(outline.read_text())["features"]:
         cells |= set(h3.geo_to_cells(f["geometry"], res))
     return cells
-
-
-# The bake plan's land test (bakeplan.py): a chunk with no H3 cell of this resolution centred on land holds no land.
-SEA_TEST_RES = 7
 
 
 def sea_chunks(ready: set[Tile], outline: Path, z: int) -> set[Tile]:

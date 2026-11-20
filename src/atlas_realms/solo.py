@@ -120,7 +120,7 @@ class Session:
 
     def submit(self, kind: str, payload: dict) -> int:
         """Queue one of the human's orders for the next tick; returns its id."""
-        if kind == "class" and payload.get("class") not in CLASSES:
+        if kind == "class" and not (isinstance(payload.get("class"), str) and payload["class"] in CLASSES):
             raise ValueError("unknown class")
         if len(self._pending) >= MAX_PENDING:
             raise ValueError("too many orders queued")
