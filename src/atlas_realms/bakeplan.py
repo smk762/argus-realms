@@ -158,7 +158,10 @@ def dem_bbox(bbox: tuple[float, float, float, float]) -> tuple[float, float, flo
 def glo30_tiles(bbox: tuple[float, float, float, float]) -> int:
     """How many 1-degree Copernicus GLO-30 tiles a lon/lat box touches (an upper bound: all-sea ones are absent)."""
     west, south, east, north = bbox
-    return (math.ceil(east) - math.floor(west)) * (math.ceil(north) - math.floor(south))
+    if west > east:  # across the antimeridian
+        east += 360
+    # A box on whole degrees, even a zero-width one, still touches the tile it sits in.
+    return max(1, math.ceil(east) - math.floor(west)) * max(1, math.ceil(north) - math.floor(south))
 
 
 def land_cells(path: Path, res: int) -> set[str]:
@@ -199,6 +202,8 @@ def main(argv: list[str] | None = None) -> None:
         p.error("--image must be a plain image reference")
     if not a.commit or not SHA.fullmatch(a.commit):
         p.error("--commit must be a full argus-atlas sha (default: docs/atlas/sync.json)")
+    if a.size < 256 or a.size & (a.size - 1):
+        p.error("--size must be a power of two, at least 256 (px)")
     if a.tiles:
         block = [tuple(int(v) for v in t.split("/")) for t in a.tiles.split(",") if t]
         if any(len(t) != 3 or t[0] != a.zoom for t in block):
@@ -226,6 +231,8 @@ def main(argv: list[str] | None = None) -> None:
         )
     elif a.tiles:
         notes.append(f"chunks listed with --tiles: {len(block)}")
+    if not block:
+        p.error("no chunks to bake (an all-sea block, or an empty --tiles)")
     tiles = raster_order(block)
     bbox = canvas_bbox(tiles, a.size, a.margin)
     jobs = len(tiles) * len(styles)
