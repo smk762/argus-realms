@@ -320,6 +320,7 @@ def build(out: Path, use_tiles: bool) -> None:
     out.mkdir(parents=True)
     for p in SRC.iterdir():
         shutil.copy2(p, out / p.name)
+    version_assets(out)
     (out / "vendor" / "dh").mkdir(parents=True)
     for f in DH_FILES:
         shutil.copy2(DH / f, out / "vendor" / "dh" / f)
@@ -375,6 +376,24 @@ def build(out: Path, use_tiles: bool) -> None:
     print(f"arena/dist: {len(files)} files, {total / 2**20:.1f} MiB; largest {biggest.relative_to(out)} "
           f"{biggest.stat().st_size / 2**20:.1f} MiB")  # fmt: skip
     check_pages_limits(out, files)
+
+
+def _version(out: Path, page: str, ref: str, asset: str) -> None:
+    """Point `ref` in `page` at `asset?v=<content hash>`."""
+    tag = hashlib.sha256((out / asset).read_bytes()).hexdigest()[:12]
+    text = (out / page).read_text()
+    if text.count(ref) != 1:
+        sys.exit(f"arena/src/{page}: expected {ref} once, to version {asset}")
+    (out / page).write_text(text.replace(ref, ref.replace(asset, f"{asset}?v={tag}")))
+
+
+def version_assets(out: Path) -> None:
+    """Content-hashed URLs for the page's code: Cloudflare gives .js and .css a 4-hour browser max-age, so a fixed
+    URL let a browser pair a new index.html with the last deploy's app.js. The worker first, so app.js's hash
+    covers it."""
+    _version(out, "app.js", 'new Worker("worker.mjs"', "worker.mjs")
+    _version(out, "index.html", 'src="app.js"', "app.js")
+    _version(out, "index.html", 'href="style.css"', "style.css")
 
 
 def check_pages_limits(out: Path, files: list[Path]) -> None:

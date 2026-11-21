@@ -7,7 +7,32 @@
    "chunks": 30
   },
   {
+   "name": "cyberpunk",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
+   "name": "imhof",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
+   "name": "minecraft",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
+   "name": "pixel",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
    "name": "tolkien",
+   "patron_only": false,
+   "chunks": 30
+  },
+  {
+   "name": "watercolor",
    "patron_only": false,
    "chunks": 30
   }
