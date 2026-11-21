@@ -213,9 +213,9 @@ function initMap() {
 
 const FOG = "#0d0f13"; // the game's fog colour; the mist image (fog-<region>.webp) is built around it
 
-// The painted map's native detail, but at least z10 so hexes and units stay readable where the bake is coarse
-// (Iceland is painted to z9; MapLibre stretches its tiles one zoom further).
-function maxZoom() { return Math.max(manifest.maxzoom, 10); }
+// The painted map's native detail and no further: stretched tiles go soft. Hexes stay readable at every region's
+// limit (a res-5 hex is ~140 px across at z9 on Iceland).
+function maxZoom() { return manifest.maxzoom; }
 
 // The chosen theme, if this region has it; else the region's first.
 function chosenStyle() {
@@ -237,7 +237,27 @@ function setSea(name) {
   const s = manifest.styles.find((x) => x.name === name);
   if (manifest.placeholder || !s) return;
   map.setPaintProperty("sea", "background-color", s.sea || FOG);
+  map.setPaintProperty("hex-line", "line-color", hexLineColor(s.sea));
   if (s.sea_texture && map.hasImage(`sea-${s.name}`)) map.setPaintProperty("sea", "background-pattern", `sea-${s.name}`);
+}
+
+// The plain grid: dark on light paintings, light on dark ones (cyberpunk), judged by the theme's sea colour.
+function hexLineColor(sea) {
+  const [r, g, b] = (sea || "#808080").match(/[0-9a-f]{2}/gi).map((h) => (parseInt(h, 16) / 255) ** 2.2);
+  const plain = 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.05 ? "rgba(214, 244, 255, 0.6)" : "#1d1d1d";
+  return ["case", ["has", "color"], ["get", "color"], plain];
+}
+
+// The plain grid fades out as the hexes shrink on screen, from HEX_PX_FULL wide to HEX_PX_GONE; owned hexes keep their
+// borders. Zooms from the region's latitude: a res-5 hex is about HEX_M across.
+const HEX_M = 18000, HEX_PX_GONE = 16, HEX_PX_FULL = 56;
+function hexLineOpacity() {
+  const [, s, , n] = manifest.bounds;
+  const mpp0 = 156543.03 * Math.cos(((s + n) / 2) * Math.PI / 180); // metres per pixel at z0
+  const at = (px) => Math.log2((px * mpp0) / HEX_M);
+  return ["interpolate", ["linear"], ["zoom"],
+    at(HEX_PX_GONE), ["case", ["has", "color"], 0.75, 0],
+    at(HEX_PX_FULL), 0.75];
 }
 
 function addLayers() {
@@ -312,9 +332,9 @@ function addLayers() {
   map.addLayer({
     id: "hex-line", type: "line", source: "hexes", filter: ["get", "playable"],
     paint: {
-      "line-color": ["case", ["has", "color"], ["get", "color"], "#1d1d1d"],
+      "line-color": hexLineColor(manifest.styles.find((s) => s.name === chosen)?.sea),
       "line-width": ["case", ["has", "color"], 2.5, 0.8],
-      "line-opacity": 0.75,
+      "line-opacity": hexLineOpacity(),
     },
   });
   // MapLibre can't vary line-dasharray by feature, so spawn zones get their own dashed layer.

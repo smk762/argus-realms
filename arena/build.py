@@ -40,6 +40,9 @@ PYODIDE = HERE / "node_modules" / "pyodide"
 CACHE = HERE / ".cache" / "wheels"
 PYODIDE_CORE = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json")
 PACKAGES = ("h3", "pydantic")  # loadPackage() pulls their dependencies from the lock file
+# Styles whose painted open sea is too busy for sea_fill's colour match (cyberpunk: rain and circuit lines). Their
+# painted sea fades into the fill a few km offshore, by Atlas's sea mask (data/masks/<region>.png), where there is one.
+MASKED_SEA = {"cyberpunk", "minecraft"}
 TILE_QUALITY = 88  # WebP quality for the painted tiles (DESIGN.md: q80-q92 and AVIF compared)
 DH_FILES = ("dh-theme.js", "dh-tokens.css", "dh-strip.css", "dh-badge.css")
 # argus-atlas parts the browser never imports (servers, CLI, model backends, templates).
@@ -241,7 +244,7 @@ def world_manifest(r: dict, tiles: Path | None) -> dict:
     return m
 
 
-def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path) -> tuple[int, int]:
+def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path, mask: Path | None = None) -> tuple[int, int]:
     """An XYZ folder of WebP q88 tiles per style (indistinguishable from the PNGs at device scale 2 and ~10x smaller,
     see DESIGN.md), with the block's open-sea chunks painted in (sea_fill.py), built once per set of source tiles and
     cached. Returns the source tile count and the bytes written."""
@@ -258,8 +261,10 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path) -> tuple[
     n = size = 0
     for s in manifest["styles"]:
         src = sorted((tiles / s["name"]).rglob("*.png"))
+        coast = mask if s["name"] in MASKED_SEA and mask is not None and mask.exists() else None
+        coast_key = hashlib.sha256(coast.read_bytes()).hexdigest() if coast else "-"
         key = hashlib.sha256(
-            f"xyz:webp{TILE_QUALITY}:fill{FILL_VERSION}:{sorted(sea)}".encode()
+            f"xyz:webp{TILE_QUALITY}:fill{FILL_VERSION}:{sorted(sea)}:coast{coast_key}".encode()
             + b"".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime_ns}".encode() for p in src)
         ).hexdigest()[:16]
         cached = HERE / ".cache" / "tiles" / f"{s['name']}-{key}"
@@ -268,8 +273,11 @@ def copy_tiles(tiles: Path, dest: Path, manifest: dict, outline: Path) -> tuple[
             got = sea_sample(tiles, s["name"], manifest)
             if got and sea:
                 root = HERE / ".cache" / "filled"
-                r = fill(tiles, s["name"], manifest, sea, got[0], root)
-                print(f"  painted {r['sea_chunks']} open-sea chunks into {s['name']} ({r['tiles_written']} tiles)")
+                r = fill(tiles, s["name"], manifest, sea, got[0], root, coast)
+                faded = ", painted sea faded offshore" if coast else ""
+                print(
+                    f"  painted {r['sea_chunks']} open-sea chunks into {s['name']} ({r['tiles_written']} tiles{faded})"
+                )
             print(f"  encoding {s['name']} ({len(src)} source tiles, WebP q{TILE_QUALITY})")
             if cached.exists():
                 shutil.rmtree(cached)
@@ -352,7 +360,8 @@ def build(out: Path, use_tiles: bool) -> None:
         add_fog(out, manifest)
         if tiles is not None and not manifest["placeholder"]:
             prefix = f"tiles/{r['id']}"
-            n, size = copy_tiles(tiles, out / prefix, manifest, ROOT / r["outline"])
+            mask = ROOT / "data" / "masks" / f"{r['id']}.png"
+            n, size = copy_tiles(tiles, out / prefix, manifest, ROOT / r["outline"], mask)
             add_sea(tiles, out / prefix, manifest, prefix)
             names = ", ".join(s["name"] for s in manifest["styles"])
             print(f"  {r['id']}: {n} source tiles -> {size / 2**20:.1f} MiB of WebP tiles ({names})")
