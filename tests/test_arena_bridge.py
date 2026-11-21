@@ -99,10 +99,10 @@ def test_regions_are_listed_and_a_game_keeps_its_region():
     listed = a.call("GET", "/api/regions")
     assert listed["default"] == "cook-strait"
     assert [r["id"] for r in listed["regions"]] == [r.id for r in REGIONS]
-    assert a.call("GET", "/api/manifest?region=iceland")["chunk_zoom"] == 7
+    assert a.call("GET", "/api/manifest?region=iceland")["chunk_zoom"] == 8
     r = a.call("POST", "/api/solo", {"tick_every": 0.25, "seed": SEED, "region": "iceland"}, now=0.0)
     assert r["region"] == "iceland"
-    assert a.call("GET", "/api/manifest")["chunk_zoom"] == 7  # the session's own map
+    assert a.call("GET", "/api/manifest")["chunk_zoom"] == 8  # the session's own map
     zones = [f["properties"]["zone"] for f in a.call("GET", "/api/solo/local/hexes")["features"]]
     assert zones.count("spawn") == 2 and zones.count("land") > 400
     a.call("GET", "/api/solo/local/state", now=5.0)

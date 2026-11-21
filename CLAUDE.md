@@ -101,7 +101,7 @@ tiles (per region, packed by
 `arena/sea_fill.py` with the open sea painted in, then `arena/tiles_webp.py` into XYZ folders of WebP q88 files:
 never PMTiles, since Pages serves no range requests; `test/no-range.test.mjs` guards it), and writes `_headers` (CSP
 with `'wasm-unsafe-eval'`). `make arena-test` = build + `arena/test/parity.test.mjs` (Pyodide vs CPython, same state
-every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z7) is mapped onto the
+every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z8) is mapped onto the
 game's z10 by `rules.chunks.at_zoom`. The tick copies the world with `World.snapshot()`, not deepcopy (95% of a tick
 on Iceland); a new mutable field on Hex/Unit/User/Contract must be copied there (`tests/test_world_snapshot.py`). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
 Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the
