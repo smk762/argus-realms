@@ -39,7 +39,7 @@ features go into argus-atlas; anything game-specific stays here. argus-atlas's o
 `src/atlas_realms/bakeplan.py` — `python -m atlas_realms.bakeplan` prints a bash script of argus-atlas commands for a
 block of chunks (`dem` for one GLO-30 GeoTIFF, one Overpass call for the controls and one for place names, recipes,
 `chunk` per tile per style in north-to-south, west-to-east order, then `labels --job` on the first style's chunks).
-It bakes with an image built at the argus-atlas commit in `docs/atlas/sync.json` (the docs Atlas publishes; step 0 builds it from the argus-atlas checkout, refuses to start without it, and refuses to bake beside jobs of another build); the pip pin stays on the release. `--tiles` takes an exact chunk list instead of a block. Every area's plan is generated from `bakes/plans.json` by `make bake-plans` (`scripts/bake_plans.py`; `tests/test_bakeplan.py` fails on a stale or hand-edited plan, so a docs import and the plans move together). The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
+It bakes with an image built at the argus-atlas commit in `docs/atlas/sync.json` (the docs Atlas publishes; step 0 builds it from the argus-atlas checkout, refuses to start without it, and refuses to bake beside jobs of another build or of another chunk zoom); the pip pin stays on the release. `--tiles` takes an exact chunk list instead of a block. Every area's plan is generated from `bakes/plans.json` by `make bake-plans` (`scripts/bake_plans.py`; `tests/test_bakeplan.py` fails on a stale or hand-edited plan, so a docs import and the plans move together). The script reads the host layout from the environment: DEMs and OSM under `$ATLAS_HOST/dem`, recipes in
 `$ATLAS_HOST/recipes`, the model tree at `$ATLAS_MODELS`, finished chunks at `$ATLAS_MAPS/areas/<area>/<style>/<style>-<z>-<x>-<y>/`
 (one dir per style is also what argus-atlas seams against). Atlas and the arena paint from the same bakes and exports (`var/tiles-areas/<area>`). Generated plans are committed under `bakes/` and run on
 the GPU host. Never commit host-specific paths, host names or LAN addresses.
@@ -101,7 +101,7 @@ tiles (per region, packed by
 `arena/sea_fill.py` with the open sea painted in, then `arena/tiles_webp.py` into XYZ folders of WebP q88 files:
 never PMTiles, since Pages serves no range requests; `test/no-range.test.mjs` guards it), and writes `_headers` (CSP
 with `'wasm-unsafe-eval'`). `make arena-test` = build + `arena/test/parity.test.mjs` (Pyodide vs CPython, same state
-every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z7) is mapped onto the
+every tick, and save/restore, on every region). A region baked at another chunk zoom (Iceland: z8) is mapped onto the
 game's z10 by `rules.chunks.at_zoom`. The tick copies the world with `World.snapshot()`, not deepcopy (95% of a tick
 on Iceland); a new mutable field on Hex/Unit/User/Contract must be copied there (`tests/test_world_snapshot.py`). Any engine change is picked up by rebuilding; the parity test fails on a stale bundle.
 Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the

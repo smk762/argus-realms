@@ -183,8 +183,8 @@ and the tile export the build paints from (not in git).
   Save version 3; a save from a region the build no longer has is refused (409).
 - **Client:** the start dialog has a map picker, and the map behind it follows the choice. The theme carries over
   where the region has it. Zoom limits follow the region's bake (`minzoom`, `chunk_zoom`, `maxzoom`), at least z10.
-- **Chunk zoom:** the game's chunks are z10. Iceland reuses Atlas's bake, painted in z7 chunks (native to z9), so
-  `rules.chunks.at_zoom` maps each onto its 64 z10 chunks; finer chunks would count once all four children are ready.
+- **Chunk zoom:** the game's chunks are z10. Iceland reuses Atlas's bake, painted in z8 chunks (native to z10), so
+  `rules.chunks.at_zoom` maps each onto its 16 z10 chunks; finer chunks would count once all four children are ready.
 - **Size:** a region needs about 50+ land hexes at H3 res 5 (Cook Strait: 50 claimable + 2 spawns). Réunion and
   Tenerife–Gran Canaria have 10–14, so they aren't offered. Iceland has 461.
 - **Tick cost:** the tick used to deepcopy the world, which was 95% of a tick on Iceland (~1,650 hexes). It now
