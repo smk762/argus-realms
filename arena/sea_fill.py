@@ -12,11 +12,15 @@ blue. This module paints them in as ordinary tiles, so they render exactly like 
    density. The grain is seeded, so it never repeats visibly and builds are reproducible.
 5. Mirror each painted neighbour's sea across the shared edge, easing into the fill over MIRROR px, so colour and
    grain are continuous right at the edge.
-6. Write every tile of the block, at every zoom, from the canvas; the coarser zooms are downsampled from it.
+6. With a coast mask (Atlas's sea mask, `data/masks/<area>.png`), fade the painted sea into the fill a few km off the
+   coast. For styles whose painted sea step 1 can't match by colour (cyberpunk's rain and circuit lines), the painted
+   chunks' open sea otherwise shows as rectangles against the fill.
+7. Write every tile of the block, at every zoom, from the canvas; the coarser zooms are downsampled from it.
 
 Pillow only. `fill()` writes a complete tile tree for `tiles_webp.export`.
 """
 
+import json
 import random
 import shutil
 from pathlib import Path
@@ -261,8 +265,29 @@ def _level_painted_seams(canvas, mask, ready, origin, size) -> Image.Image:
     return out
 
 
-def fill(tiles: Path, style: str, manifest: dict, sea: set[tuple[int, int, int]], sea_colour: str, out: Path) -> dict:
-    """Write tiles/<style> plus the synthesised sea into out/<style>. Returns counts for the build log."""
+def _coast(mask_png: Path, cz: int, origin: tuple[int, int], chunks: tuple[int, int], size: int) -> Image.Image:
+    """Atlas's sea mask (scripts/sea_mask.py: alpha, 256 px per chunk from its own origin, at the chunk zoom) laid over
+    the canvas: 255 on land and coastal sea, fading to 0 offshore and outside the mask's painted block."""
+    meta = json.loads(mask_png.with_suffix(".json").read_text())
+    if meta["zoom"] != cz:
+        raise SystemExit(f"{mask_png}: mask at z{meta['zoom']}, tiles' chunks at z{cz}")
+    alpha = Image.open(mask_png).getchannel("A")
+    grid = Image.new("L", (chunks[0] * TILE, chunks[1] * TILE), 0)
+    grid.paste(alpha, ((meta["x"] - origin[0]) * TILE, (meta["y"] - origin[1]) * TILE))
+    return grid.resize((chunks[0] * size, chunks[1] * size), Image.Resampling.BILINEAR)
+
+
+def fill(
+    tiles: Path,
+    style: str,
+    manifest: dict,
+    sea: set[tuple[int, int, int]],
+    sea_colour: str,
+    out: Path,
+    coast: Path | None = None,
+) -> dict:
+    """Write tiles/<style> plus the synthesised sea into out/<style>; with `coast` (a sea mask PNG), painted sea fades
+    into the fill offshore. Returns counts for the build log."""
     z = manifest["maxzoom"]
     cz = manifest["chunk_zoom"]
     k = 2 ** (z - cz)
@@ -291,6 +316,9 @@ def fill(tiles: Path, style: str, manifest: dict, sea: set[tuple[int, int, int]]
     # Painted pixels stay; the synthesised sea shows only where nothing was painted.
     full = synth.convert("RGBA")
     full.alpha_composite(canvas)
+    if coast is not None:
+        keep = _coast(coast, cz, (cx0, cy0), (cx1 - cx0 + 1, cy1 - cy0 + 1), k * TILE)
+        full = Image.composite(full, synth.convert("RGBA"), keep)
 
     # Copy the exported tree, then add or replace tiles inside the block.
     dest = out / style
