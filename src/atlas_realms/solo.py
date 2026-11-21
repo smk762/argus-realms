@@ -25,6 +25,7 @@ from atlas_realms.tick.engine import (
     SERVICES,
     BattleRecord,
     city_base,
+    contract_ticks,
     flip_needed,
     garrison_max,
     hex_income_per_hour,
@@ -308,7 +309,8 @@ class Session:
             jobs = [c for c in open_ if c.bot == bot and c.kind != "protect"]
             end = w.tick
             for c in sorted(jobs, key=lambda c: c.id):
-                end = c.began + c.minutes if c.status == "active" else max(end, c.start) + c.minutes
+                run = contract_ticks(c, t)
+                end = c.began + run if c.status == "active" else max(end, c.start) + run
             return end
 
         bots = {}
@@ -333,7 +335,7 @@ class Session:
                 "target": c.target_user,
                 "target_clan": c.target_clan,
                 "starts_in": None if c.status == "active" else max(0, c.start - w.tick),
-                "ends_in": c.began + c.minutes - w.tick if c.status == "active" else None,
+                "ends_in": c.began + contract_ticks(c, t) - w.tick if c.status == "active" else None,
             }
             for c in sorted(w.contracts.values(), key=lambda c: c.id)
             if c.status in ("queued", "active") or (c.hirer == HUMAN and c.id > max(w.contracts, default=0) - 20)
