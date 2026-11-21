@@ -102,6 +102,7 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
     def order(sid: str, body: OrderIn) -> dict:
         s = get(sid)
         with s.lock:
+            s.catch_up()  # the order joins the next tick due from now, not one already past
             try:
                 return {"id": s.submit(body.kind, body.payload)}
             except ValueError as e:

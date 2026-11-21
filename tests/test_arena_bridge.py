@@ -168,3 +168,15 @@ def test_a_shield_restore_that_is_refused_still_loads_the_game(arena):
     b = Arena(REGIONS)
     assert b.restore(arena.save(), now=200.0, away="shield")["id"] == "local"
     assert b.session is not None
+
+
+def test_an_order_joins_the_tick_due_now_not_a_past_one(arena):
+    # 1 s after the start six ticks are due: they run before the order is queued, so it lands on tick 7.
+    arena.call("POST", "/api/solo/local/orders", {"kind": "class", "payload": {"class": "marine"}}, now=101.0)
+    assert arena.session.world.tick == 6
+    assert [o.kind for o in arena.session._pending] == ["class"]
+
+
+@pytest.mark.parametrize("request_text", ["", "{not json", "[1, 2]", '"call"'])
+def test_handle_answers_a_malformed_request(arena, request_text):
+    assert json.loads(arena.handle(request_text))["status"] == 400
