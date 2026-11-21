@@ -47,9 +47,14 @@
 
   // tiles/areas.json lists the areas (each its own tile tree and styles); the frame is the island's outline.
   const areas = await (await fetch("tiles/areas.json")).json();
-  const byId = Object.fromEntries(areas.map((a) => [a.id, a]));
+  // No prototype: a hash or saved area such as "constructor" or "__proto__" must not look like an area.
+  const byId = Object.assign(Object.create(null), Object.fromEntries(areas.map((a) => [a.id, a])));
   const base = new URL(".", location.href).href;
-  const fromHash = decodeURIComponent(location.hash.slice(1));
+  // A malformed hash (#%, a cut-off escape) names no area rather than stopping the page.
+  const hashId = () => {
+    try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; }
+  };
+  const fromHash = hashId();
   let area = byId[fromHash] || byId[store.get("area")] || areas[0];
   // The sea mask (scripts/sea_mask.py, one per area): opaque on land and on the coastal sea, fading out by a few
   // kilometres offshore, so the painted chunks' open sea gives way to the basemap's ocean and the stepped block
@@ -118,7 +123,16 @@
   const have = {};
   const index = async (a, name) => {
     const k = a.id + "/" + name;
-    have[k] ||= fetch(`tiles/${k}/index.json${v(a)}`).then((r) => r.json()).then((l) => new Set(l));
+    have[k] ||= fetch(`tiles/${k}/index.json${v(a)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`tile index ${k}: ${r.status}`);
+        return r.json();
+      })
+      .then((l) => new Set(l))
+      .catch((e) => {
+        delete have[k]; // not cached: the next tile asks again
+        throw e;
+      });
     return have[k];
   };
   const EMPTY = new ImageData(256, 256);
@@ -336,7 +350,7 @@
   });
   btn.addEventListener("keyup", (ev) => { if (ev.code === "Space" || ev.key === "Enter") { ev.preventDefault(); peek(false); } });
   addEventListener("hashchange", () => {
-    const id = decodeURIComponent(location.hash.slice(1));
+    const id = hashId();
     if (byId[id] && id !== area.id) chooseArea(id);
   });
   applyOpacity();
