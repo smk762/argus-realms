@@ -78,3 +78,17 @@ def test_at_zoom_maps_coarse_and_fine_chunks_onto_the_game_zoom():
     kids = [(11, 8, 8), (11, 9, 8), (11, 8, 9)]
     assert at_zoom(kids, 10) == set()  # one child short
     assert at_zoom([*kids, (11, 9, 9)], 10) == {(10, 4, 4)}
+
+
+def test_a_hex_round_a_tile_corner_needs_all_four_chunks():
+    # The corner of four z10 tiles lies inside this hex, but its centre and vertices fall in only three of them.
+    assert cell_chunks("85bb2837fffffff", 10) == [(10, 1009, 642), (10, 1009, 643), (10, 1010, 642), (10, 1010, 643)]
+
+
+def test_at_zoom_counts_cover_split_across_finer_zooms():
+    from atlas_realms.rules.chunks import at_zoom
+
+    three = [(11, 8, 8), (11, 9, 8), (11, 8, 9)]
+    grandkids = [(12, 18, 18), (12, 19, 18), (12, 18, 19), (12, 19, 19)]  # under (11, 9, 9)
+    assert at_zoom([*three, *grandkids], 10) == {(10, 4, 4)}
+    assert at_zoom([*three, *grandkids[:3]], 10) == set()
