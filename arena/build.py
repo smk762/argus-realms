@@ -71,13 +71,18 @@ def check_page(html: str) -> None:
         sys.exit("arena/src/index.html has inline styles: put them in style.css (the CSP allows none)")
 
 
+# Cloudflare Web Analytics is on for the zone: Cloudflare adds its beacon tag at the edge, and the tag
+# loads this one script. It reports to this site's own /cdn-cgi/rum, so connect-src is unchanged.
+BEACON = "https://static.cloudflareinsights.com"
+
+
 def headers() -> str:
     """Cloudflare Pages _headers. 'wasm-unsafe-eval' lets Pyodide compile its WebAssembly (it allows no JS eval);
     the game runs in a same-origin module worker, MapLibre's tile worker from a blob: URL."""
     csp = "; ".join(
         [
             "default-src 'self'",
-            f"script-src 'self' 'wasm-unsafe-eval' {MAPLIBRE}.js",
+            f"script-src 'self' {BEACON} 'wasm-unsafe-eval' {MAPLIBRE}.js",
             f"style-src 'self' {MAPLIBRE}.css",
             f"img-src 'self' data: blob: {BASEMAP}",
             f"connect-src 'self' {BASEMAP}",
