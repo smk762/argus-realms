@@ -94,3 +94,19 @@ def test_the_bot_roster_is_bounded(client):
     from atlas_realms.bots import PERSONALITIES
 
     assert client.post("/api/solo", json={"bots": ["settler"] * (len(PERSONALITIES) + 1)}).status_code == 422
+
+
+def test_one_client_cannot_fill_the_arena(client, monkeypatch):
+    import atlas_realms.api as api
+
+    monkeypatch.setattr(api, "MAX_SESSIONS", 3)
+    monkeypatch.setattr(api, "MAX_PER_CLIENT", 2)
+    first = client.post("/api/solo", json={}).json()["id"]
+    second = client.post("/api/solo", json={}).json()["id"]
+    client.get(f"/api/solo/{first}/state")  # second is now this client's least recently used game
+    third = client.post("/api/solo", json={})
+    assert third.status_code == 200  # a new game still starts: it replaces the client's own oldest
+    assert client.get(f"/api/solo/{second}/state").status_code == 404
+    assert client.get(f"/api/solo/{first}/state").status_code == 200
+    other = TestClient(client.app, client=("203.0.113.9", 50000))
+    assert other.post("/api/solo", json={}).status_code == 200  # a slot was left for somebody else

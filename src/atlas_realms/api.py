@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +26,9 @@ WEB = ROOT / "web"
 OUTLINE = ROOT / "data" / "nz_mainland.geojson"
 MAX_SESSIONS = 50
 IDLE_SECONDS = 30 * 60  # a session untouched this long may be evicted to make room for a new one
+MAX_PER_CLIENT = 3  # games one client address may hold: its oldest makes room for a new one, so no one fills the arena
+MAX_BUILDS = 2  # world builds running at once (each is CPU-heavy)
+BUILD_WAIT = 30.0  # seconds a new game waits for a build slot before a 503
 
 
 def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI:
@@ -33,7 +36,9 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
     manifest = json.loads((tiles / "manifest.json").read_text())
     sessions: dict[str, Session] = {}
     seen: dict[str, float] = {}  # sid -> last request (monotonic)
+    owner: dict[str, str] = {}  # sid -> the client address that created it
     lock = threading.Lock()  # the sync routes run in a threadpool
+    builds = threading.BoundedSemaphore(MAX_BUILDS)
 
     def get(sid: str) -> Session:
         with lock:
@@ -43,15 +48,23 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
             seen[sid] = time.monotonic()
         return s
 
-    def make_room() -> None:
-        """Called under `lock`: evict the longest-idle session if the store is full, but never one still in use."""
+    def drop(sid: str) -> None:
+        sessions.pop(sid, None)
+        seen.pop(sid, None)
+        owner.pop(sid, None)
+
+    def make_room(client: str) -> None:
+        """Called under `lock`. A client at its quota gives up its own least recently used game. Then, if the store is
+        full, evict the longest-idle session, but never one still in use."""
+        mine = [sid for sid, who in owner.items() if who == client]
+        if len(mine) >= MAX_PER_CLIENT:
+            drop(min(mine, key=seen.__getitem__))
         if len(sessions) < MAX_SESSIONS:
             return
         oldest = min(seen, key=seen.__getitem__)
         if time.monotonic() - seen[oldest] < IDLE_SECONDS:
             raise HTTPException(503, "the arena is full: try again later")
-        sessions.pop(oldest, None)
-        seen.pop(oldest, None)
+        drop(oldest)
 
     @app.get("/api/manifest")
     def get_manifest() -> dict:
@@ -62,23 +75,29 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
         return solo_meta()
 
     @app.post("/api/solo")
-    def new_solo(body: NewSolo) -> dict:
+    def new_solo(body: NewSolo, request: Request) -> dict:
         try:
             check_new(body)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         if body.region not in (None, "cook-strait"):  # the server's solo mode has only Cook Strait
             raise HTTPException(422, f"unknown region {body.region!r}")
+        client = request.client.host if request.client else "?"  # behind a proxy, configure its forwarded headers
         with lock:
-            make_room()  # refuse before the expensive world build
-        world = build_world(manifest, outline, SPAWNS)
+            make_room(client)  # refuse before the expensive world build
+        if not builds.acquire(timeout=BUILD_WAIT):
+            raise HTTPException(503, "the arena is busy: try again shortly")
+        try:
+            world = build_world(manifest, outline, SPAWNS)
+        finally:
+            builds.release()
         s = Session.new(
             world, body.name, body.unit_class, tuple(body.bots), body.subscriber, tick_every=body.tick_every
         )
         sid = secrets.token_urlsafe(9)
         with lock:
-            make_room()  # again: another request may have filled the store meanwhile
-            sessions[sid], seen[sid] = s, time.monotonic()
+            make_room(client)  # again: another request may have filled the store meanwhile
+            sessions[sid], seen[sid], owner[sid] = s, time.monotonic(), client
         return {"id": sid}
 
     @app.get("/api/solo/{sid}/hexes")
