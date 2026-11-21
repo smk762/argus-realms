@@ -150,8 +150,9 @@ def test_fog_image_of_a_block_narrower_than_the_feather_is_all_fog():
 
 
 def test_sea_edges_skip_chunks_of_another_zoom():
+    # (8, 1, 0) read as a z10 chunk would face the missing (10, 2, 0) to its east.
     ready = {(10, 0, 0), (8, 1, 0)}
-    assert list(sea_fog._sea_edges(ready, 10, (0, 0, 1, 0))) == [((0, 0), "e")]
+    assert list(sea_fog._sea_edges(ready, 10, (0, 0, 2, 0))) == [((0, 0), "e")]
 
 
 # -- sea_fill ----------------------------------------------------------------------------------------
