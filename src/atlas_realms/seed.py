@@ -73,9 +73,12 @@ def sea_chunks(ready: set[Tile], outline: Path, z: int) -> set[Tile]:
 
 
 def _clip_ring(ring: list, box: tuple[float, float, float, float]) -> list:
-    """Sutherland-Hodgman: a lon/lat ring clipped to an axis-aligned box (west, south, east, north), closed."""
+    """Sutherland-Hodgman: a lon/lat ring clipped to an axis-aligned box (west, south, east, north), closed. Empty
+    when fewer than three distinct vertices are left (a ring that only touches the box)."""
     w, s, e, n = box
     pts = [tuple(p[:2]) for p in ring]
+    if len(pts) > 1 and pts[0] == pts[-1]:  # GeoJSON rings repeat their first position at the end
+        pts = pts[:-1]
     for inside, cut in (
         (lambda p: p[0] >= w, lambda a, b: (w, a[1] + (b[1] - a[1]) * (w - a[0]) / (b[0] - a[0]))),
         (lambda p: p[0] <= e, lambda a, b: (e, a[1] + (b[1] - a[1]) * (e - a[0]) / (b[0] - a[0]))),
@@ -94,7 +97,10 @@ def _clip_ring(ring: list, box: tuple[float, float, float, float]) -> list:
             elif inside(prev):
                 out.append(cut(prev, cur))
         pts = out
-    return pts + pts[:1] if pts else []
+    pts = [p for i, p in enumerate(pts) if p != pts[i - 1]]  # no zero-length edges, the closing one included
+    if len(set(pts)) < 3:
+        return []
+    return pts + pts[:1]
 
 
 def plan_hexes(
