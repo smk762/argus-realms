@@ -185,9 +185,19 @@ def load_record(vendor: Path = VENDOR) -> dict:
     commit = record["atlas"]["commit"]
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise DocsError(f"sync.json: {commit!r} is not a full commit sha")
+    as_doc = {d.path: f"{d.id}.md" for d in DOCS}
     for upstream, entry in record["files"].items():
         if upstream in NEVER_IMPORT:
             raise DocsError(f"sync.json imports {upstream}, which is never imported")
+        # Only the allowlisted docs and the images they may show, each under the name import gives it.
+        if upstream in as_doc:
+            expected = as_doc[upstream]
+        elif re.fullmatch(r"docs/img/[\w.-]+", upstream):
+            expected = f"img/{PurePosixPath(upstream).name}"
+        else:
+            raise DocsError(f"sync.json imports {upstream}, which is not in DOCS")
+        if entry["as"] != expected:
+            raise DocsError(f"sync.json vendors {upstream} as {entry['as']!r}, not {expected!r}")
         path = vendor / entry["as"]
         if not path.is_file() or sha256(path.read_bytes()) != entry["sha256"]:
             raise DocsError(f"docs/atlas/{entry['as']} differs from its record: re-import instead of editing it")
@@ -284,12 +294,14 @@ def render(record: dict, vendor: Path = VENDOR) -> Rendered:
         heads: list[tuple[str, str]] = []
         seen: dict[str, int] = {}
         first = True
+        titled = False  # the doc's first heading is an H1, which then carries the section's id
         for i, tok in enumerate(tokens):
             if tok.type == "heading_open":
                 title = tokens[i + 1].content
                 level = int(tok.tag[1])
                 if level == 1 and first:
                     anchor = doc.id  # the doc's own title names its section
+                    titled = True
                 else:
                     base = f"{doc.id}-{slug(title)}"
                     n = seen.get(base, 0)
@@ -327,7 +339,7 @@ def render(record: dict, vendor: Path = VENDOR) -> Rendered:
                 kids.append(child)
             tok.children = kids
         body = md.renderer.render(tokens, md.options, {})
-        heading = "" if text.lstrip().startswith("# ") else f'<h2 id="{doc.id}">{html.escape(doc.title)}</h2>\n'
+        heading = "" if titled else f'<h2 id="{doc.id}">{html.escape(doc.title)}</h2>\n'
         anchors.add(doc.id)
         parts.append(f'<section class="doc" aria-labelledby="{doc.id}">\n{heading}{body}</section>')
         toc.append((doc.id, doc.title, heads))
