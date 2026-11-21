@@ -229,6 +229,11 @@ builds now draw no basemap at all.
     - At z9.6 the strait now shades gradually between the painted chunks' differing blues, where before it stepped.
       Tolkien's speckle density still varies a little from one painted chunk to the next; that is in the painting
       itself.
+  - **Busy seas: faded offshore.** Cyberpunk paints its sea with rain and dark circuit lines, and Minecraft's varies
+    from chunk to chunk. The colour match in step 1 misses most of it, so painted chunks showed as rectangles against
+    the fill. For the styles in `build.py`'s `MASKED_SEA`, `fill()` takes Atlas's sea mask (`data/masks/<region>.png`).
+    Painted sea stays within about 1 km of the coast and fades into the fill by about 3 km. The open sea is then the
+    fill throughout: calmer, with no rectangles.
   - **Fallback:** the style's sea colour and texture are still the map background, where no tile covers.
 - **In play: the strait is open water.** `seed.sea_chunks()` is in the Python rules, so the server and the browser agree.
   - Inside the bounding box of the baked chunks, a chunk with no land counts as ready. "No land" is the bake plan's own
