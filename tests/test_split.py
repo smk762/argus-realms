@@ -90,3 +90,9 @@ def test_caps_grow_half_again_rounded_up():
     again = after_split(SPLIT, 7)
     assert (again.hex_cap, again.hex_cap_with_capital) == (8, 27)
     assert after_split(Tunables(split_cap_growth=1.0), 6).hex_cap == DEFAULT.hex_cap
+
+
+def test_grown_caps_ignore_floating_point_noise():
+    t = DEFAULT.model_copy(update={"hex_cap": 10, "hex_cap_with_capital": 20, "split_cap_growth": 1.1})
+    grown = after_split(t, 6)
+    assert (grown.hex_cap, grown.hex_cap_with_capital) == (11, 22)

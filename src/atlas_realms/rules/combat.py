@@ -101,6 +101,8 @@ def resolve_battle(attacker: Side, defender: Side, dice: Dice, t: Tunables = DEF
 
 def simulate(attack: float, defence: float, battles: int, t: Tunables = DEFAULT) -> tuple[float, float]:
     """(decisive share, attacker share of decisive) over `battles` full-HP battles."""
+    if battles <= 0:
+        raise ValueError("simulate needs at least one battle")
     wins = losses = 0
     for i in range(battles):
         dice = Dice(i.to_bytes(8, "big"))

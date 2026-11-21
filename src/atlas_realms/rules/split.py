@@ -37,8 +37,9 @@ def after_split(t: Tunables, res: int) -> Tunables:
     return t.model_copy(
         update={
             "h3_resolution": res,
-            "hex_cap": math.ceil(t.hex_cap * grow),
-            "hex_cap_with_capital": math.ceil(t.hex_cap_with_capital * grow),
+            # Rounded first: 10 * 1.1 is 11.000000000000002 in floating point, which must still be 11.
+            "hex_cap": math.ceil(round(t.hex_cap * grow, 9)),
+            "hex_cap_with_capital": math.ceil(round(t.hex_cap_with_capital * grow, 9)),
         }
     )
 
