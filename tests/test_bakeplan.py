@@ -1,4 +1,5 @@
 import io
+import subprocess
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -95,6 +96,30 @@ def test_a_chunk_list_bakes_exactly_those_chunks():
         main(["--name", "ice", "--zoom", "7"])
     with pytest.raises(SystemExit):
         main(["--name", "ice", "--tiles", "7/57/31,7/57/31", "--zoom", "7"])
+
+
+def test_a_plan_refuses_chunks_of_another_zoom(tmp_path):
+    """A finer re-bake beside the old chunks would overlap them: the plan stops before baking, not at the export."""
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        main(["--name", "ice", "--tiles", "8/113/69", "--zoom", "8", "--area", "--styles", "antique"])
+    lines = buf.getvalue().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("other="))
+    guard = "set -euo pipefail\n" + "\n".join(lines[start : start + 2]) + "\necho clear\n"
+
+    def run(*jobs):
+        maps = tmp_path / str(len(list(tmp_path.iterdir())))
+        for j in jobs:
+            (maps / "areas" / "ice" / "antique" / j).mkdir(parents=True)
+            (maps / "areas" / "ice" / "antique" / j / "job.json").write_text("{}")
+        maps.mkdir(exist_ok=True)
+        env = {"ATLAS_MAPS": str(maps), "PATH": "/usr/bin:/bin"}
+        return subprocess.run(["bash", "-c", guard], env=env, capture_output=True, text=True)
+
+    assert run().stdout == "clear\n"
+    assert run("antique-8-113-69").stdout == "clear\n"
+    r = run("antique-8-113-69", "antique-7-56-34")
+    assert r.returncode == 1 and "antique-7-56-34" in r.stdout
 
 
 def test_a_dem_over_the_default_tile_budget_raises_it():
