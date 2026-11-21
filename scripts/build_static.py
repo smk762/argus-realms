@@ -122,6 +122,11 @@ def _sha256(text: str) -> str:
     return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
 
 
+# Cloudflare Web Analytics is on for the zone: Cloudflare adds its beacon tag at the edge, and the tag
+# loads this one script. It reports to this site's own /cdn-cgi/rum, so connect-src is unchanged.
+BEACON = "https://static.cloudflareinsights.com"
+
+
 def security_headers(html: str, *others: str) -> str:
     """Response headers for every path: a CSP that hashes the pages' inline <style>s (index.html, then any other page
     such as the docs page, whose inlined vendored stylesheets hash the same), plus the companion headers."""
@@ -132,7 +137,7 @@ def security_headers(html: str, *others: str) -> str:
     csp = "; ".join(
         [
             "default-src 'self'",
-            f"script-src 'self' {MAPLIBRE}.js",
+            f"script-src 'self' {BEACON} {MAPLIBRE}.js",
             f"style-src 'self' {MAPLIBRE}.css {styles}".strip(),
             f"img-src 'self' data: blob: {BASEMAP}",
             f"connect-src 'self' {BASEMAP}",
