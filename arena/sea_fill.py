@@ -27,7 +27,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 
-VERSION = "7"  # part of the build cache key: bump when the output changes
+VERSION = "8"  # part of the build cache key: bump when the output changes
 TILE = 256
 SEA_DISTANCE = 42  # RGB distance from the style's sea colour within which a painted pixel counts as sea
 GRAIN_BLUR = 6  # px: what counts as grain (finer than this) in the painted sea
@@ -56,8 +56,11 @@ def _sea_mask(canvas: Image.Image, sea: tuple[int, int, int]) -> Image.Image:
     return ImageChops.multiply(near, canvas.getchannel("A").point(lambda a: 255 if a == 255 else 0))
 
 
-def _push_pull(rgb: Image.Image, mask: Image.Image) -> Image.Image:
-    """Fill the pixels where mask is 0 by a smooth interpolation of the pixels where it is 255."""
+def _push_pull(rgb: Image.Image, mask: Image.Image, fallback: tuple[int, int, int] = (0, 0, 0)) -> Image.Image:
+    """Fill the pixels where mask is 0 by a smooth interpolation of the pixels where it is 255. With nothing known
+    (no painted sea near the gaps), every pixel is `fallback`."""
+    if mask.getbbox() is None:
+        return Image.new("RGB", rgb.size, fallback)
     levels = []
     cur = rgb.convert("RGBA")
     cur.putalpha(mask)
@@ -151,7 +154,11 @@ MIRROR = 320  # px at z12: how far a painted chunk's own sea is mirrored into a 
 
 
 def _ramp(length: int, across: int, vertical: bool) -> Image.Image:
-    """An L mask: 255 at the start, easing (smoothstep) to 0 at `length`."""
+    """An L mask: 255 at the start, easing (smoothstep) to 0 at `length`. A ramp 1 px long is just its start."""
+    if length < 1:
+        raise ValueError("a ramp is at least 1 px long")
+    if length == 1:
+        return Image.new("L", (across, 1) if vertical else (1, across), 255)
     line = Image.new("L", (1, length) if vertical else (length, 1))
     vals = [round(255 * (1 - (3 * t * t - 2 * t * t * t))) for t in (i / (length - 1) for i in range(length))]
     line.putdata(vals)
@@ -260,8 +267,9 @@ def _level_painted_seams(canvas, mask, ready, origin, size) -> Image.Image:
     rgb = canvas.convert("RGB")
     moved = ImageChops.add(rgb, offset, offset=-128)
     soft = mask.filter(ImageFilter.GaussianBlur(3))
-    out = canvas.copy()
-    out.paste(Image.composite(moved, rgb, soft), (0, 0), canvas.getchannel("A"))
+    # Only the colour moves: the painted alpha (feathered chunk edges) is kept as it was.
+    out = Image.composite(moved, rgb, soft).convert("RGBA")
+    out.putalpha(canvas.getchannel("A"))
     return out
 
 
@@ -309,7 +317,7 @@ def fill(
     for _, x, y in sea:
         X, Y = (x - cx0) * size, (y - cy0) * size
         draw.rectangle((X - SOURCE_BAND, Y - SOURCE_BAND, X + size + SOURCE_BAND, Y + size + SOURCE_BAND), fill=255)
-    smooth = _push_pull(canvas.convert("RGB"), ImageChops.multiply(mask, near))
+    smooth = _push_pull(canvas.convert("RGB"), ImageChops.multiply(mask, near), fallback=colour)
     std, density, depth = _grain_stats(canvas, mask)
     synth = _add_grain(smooth, _procedural_grain(smooth.size, std, density, depth, seed=sum(map(ord, style))))
     _mirror_edges(synth, canvas, mask, sea, ready, (cx0, cy0), k * TILE)
