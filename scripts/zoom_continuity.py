@@ -40,13 +40,14 @@ def gauss(img: np.ndarray, sigma: float = 1.5) -> np.ndarray:
     return np.apply_along_axis(lambda v: np.convolve(v, k, "same"), 1, img)
 
 
-def ssim(a: np.ndarray, b: np.ndarray, mask: np.ndarray) -> float:
+def ssim(a: np.ndarray, b: np.ndarray, mask: np.ndarray) -> float | None:
+    """Mean SSIM over the windows wholly inside `mask`; None when no window is (a sliver thinner than the window)."""
     c1, c2 = (0.01 * 255) ** 2, (0.03 * 255) ** 2
     ma, mb = gauss(a), gauss(b)
     va, vb, cov = gauss(a * a) - ma * ma, gauss(b * b) - mb * mb, gauss(a * b) - ma * mb
     s = ((2 * ma * mb + c1) * (2 * cov + c2)) / ((ma * ma + mb * mb + c1) * (va + vb + c2))
     inner = gauss(mask.astype(float)) > 0.999  # windows wholly inside the painted area
-    return float(s[inner].mean())
+    return float(s[inner].mean()) if inner.any() else None
 
 
 def hellinger(a: np.ndarray, b: np.ndarray) -> float:
@@ -63,7 +64,8 @@ def lum(rgba: np.ndarray) -> np.ndarray:
 
 
 def compare(style: Path, p: int, c: int) -> dict | None:
-    """Parent zoom `p` against child zoom `c` over the parent's footprint; None if `p` has no tiles."""
+    """Parent zoom `p` against child zoom `c` over the parent's footprint; None if `p` has no tiles or the two share
+    no fully painted pixel (no metric is computed on an empty overlap, so none comes out NaN)."""
     tiles = [(int(t.parent.name), int(t.stem)) for t in style.glob(f"{p}/*/*.png")]
     if not tiles:
         return None
@@ -74,11 +76,14 @@ def compare(style: Path, p: int, c: int) -> dict | None:
     child = mosaic(style, c, x0 * f, y0 * f, nx * f, ny * f)
     child = child.reshape(ny * TILE, f, nx * TILE, f, 4).mean(axis=(1, 3))  # box filter
     mask = (parent[..., 3] > 0) & (child[..., 3] > 254)
+    if not mask.any():
+        return None
+    score = ssim(lum(parent), lum(child), mask)
     return {
         "parent": p,
         "child": c,
         "pixels": int(mask.sum()),
-        "ssim": round(ssim(lum(parent), lum(child), mask), 4),
+        "ssim": None if score is None else round(score, 4),
         "hist_hellinger": round(hellinger(parent[mask], child[mask]), 4),
         "mean_abs_rgb": round(float(np.abs(parent[mask][:, :3] - child[mask][:, :3]).mean()), 2),
     }
@@ -99,7 +104,7 @@ def main() -> None:
                 if c <= top:
                     got = compare(style, p, c)
                     if got is None:
-                        print(f"{style}: no z{p} tiles, z{p}->z{c} skipped", file=sys.stderr)
+                        print(f"{style}: no z{p} tiles or no overlap with z{c}, z{p}->z{c} skipped", file=sys.stderr)
                         continue
                     r = {"area": man.parent.name, "style": st["name"], **got}
                     rows.append(r)

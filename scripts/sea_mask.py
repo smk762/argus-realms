@@ -40,10 +40,18 @@ EARTH = 2 * math.pi * 6378137.0  # metres around the equator, Web Mercator
 CACHE: Path | None = None
 
 
+def cache_name(url: str) -> str:
+    """The cache file for a tile URL: readable (z_x_y) for OpenFreeMap's /planet/ tiles, prefixed with a hash of
+    everything before that (scheme, host, path), so tiles from another source never share a file."""
+    head, planet, rest = url.partition("/planet/")
+    if not planet:
+        return hashlib.sha256(url.encode()).hexdigest()[:24] + ".pbf"
+    return hashlib.sha256(head.encode()).hexdigest()[:8] + "_" + rest.replace("/", "_")
+
+
 def fetch(url: str) -> bytes:
     if CACHE and url.endswith(".pbf"):
-        _, planet, rest = url.partition("/planet/")
-        name = rest.replace("/", "_") if planet else hashlib.sha256(url.encode()).hexdigest()[:24] + ".pbf"
+        name = cache_name(url)
         hit = CACHE / name
         if hit.exists():
             return hit.read_bytes()
