@@ -30,12 +30,18 @@ MAX_FILES = 20_000
 OG_W, OG_H = 1200, 630
 
 # Cloudflare Pages: real 404s for missing tiles (without a 404.html it serves index.html, which MapLibre
-# would try to decode as a PNG), long cache on tiles, short on the page and manifest.
-HEADERS = """/tiles/*
+# would try to decode as a PNG), long cache on tiles, short on the page and manifest. Pages applies every rule that
+# matches and joins repeated headers with a comma, so no two rules may both match one path: the long cache covers
+# /tiles/<area>/... and the shared empty tile, never areas.json.
+HEADERS = """/tiles/*/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+  Access-Control-Allow-Origin: *
+/tiles/empty.png
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
   Access-Control-Allow-Origin: *
 /tiles/areas.json
   Cache-Control: public, max-age=300
+  Access-Control-Allow-Origin: *
 /
   Cache-Control: public, max-age=300
 """
@@ -75,6 +81,8 @@ def select_areas(ids: list[str]) -> list[dict]:
     if unknown:
         sys.exit(f"no AREA_INFO for {', '.join(unknown)}: add its label and frame to scripts/build_static.py")
     return [a for a in AREA_INFO if a["id"] in ids]
+
+
 ATTRIBUTION = (
     'Painted by <a href="https://github.com/smk762/argus-atlas">argus-atlas</a> from '
     '<a href="https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model">Copernicus DEM GLO-30</a> '
@@ -130,8 +138,10 @@ BEACON = "https://static.cloudflareinsights.com"
 def security_headers(html: str, *others: str) -> str:
     """Response headers for every path: a CSP that hashes the pages' inline <style>s (index.html, then any other page
     such as the docs page, whose inlined vendored stylesheets hash the same), plus the companion headers."""
-    if INLINE_SCRIPT.search(html):
-        sys.exit("site/index.html has an inline <script>: move it into site/app.js (the CSP allows no inline scripts)")
+    for i, page in enumerate((html, *others)):
+        if INLINE_SCRIPT.search(page):
+            name = "site/index.html" if i == 0 else f"page {i + 1} (the docs page)" if i == 1 else f"page {i + 1}"
+            sys.exit(f"{name} has an inline <script>: move it into a .js file (the CSP allows no inline scripts)")
     hashes = [_sha256(body) for page in (html, *others) for body in INLINE_STYLE.findall(page)]
     styles = " ".join(dict.fromkeys(hashes))
     csp = "; ".join(
@@ -271,12 +281,17 @@ def public_bakes(manifest: dict) -> dict[str, dict | None]:
 def check_sync(tiles: Path, record: dict, areas: list[dict]) -> None:
     """The docs must be the ones of the build that baked these tiles (argus-studio#169). Checked for every area
     before anything is written, so a refused build leaves the last good dist/ alone."""
+    if not areas:
+        sys.exit("no areas to publish")
     builds = {}
     for area in areas:
         manifest_path = tiles / area["id"] / "manifest.json"
         if not manifest_path.exists():
             sys.exit(f"{manifest_path} not found: export the area's tiles first (make static)")
-        for name, b in public_bakes(json.loads(manifest_path.read_text())).items():
+        bakes = public_bakes(json.loads(manifest_path.read_text()))
+        if not bakes:
+            sys.exit(f"{area['id']}: no public styles to publish (every bake is patron-only)")
+        for name, b in bakes.items():
             builds[f"{area['id']}/{name}"] = (b or {}).get("atlas") or [{}]
     try:
         atlas_docs.check_bakes(record, builds)
@@ -303,17 +318,19 @@ def build(tiles: Path, out: Path, areas: list[dict] | None = None) -> None:
         manifest = json.loads(manifest_path.read_text())
         bakes = public_bakes(manifest)
         public = list(bakes)
+        have_all: set[str] = set()  # every public style's tiles: what the sea mask must have been made for
         for name in public:
             shutil.copytree(src / name, out / "tiles" / area["id"] / name)
             # The block is not a rectangle of land: list the tiles that exist so the page asks for no others.
             have = sorted(str(t.relative_to(src / name).with_suffix("")) for t in (src / name).rglob("*.png"))
             (out / "tiles" / area["id"] / name / "index.json").write_text(json.dumps(have, separators=(",", ":")))
+            have_all.update(have)
         # Place names: the export merges every chunk's `argus-atlas labels` output into one GeoJSON per area.
         labels = None
         if manifest.get("labels_url"):
             shutil.copy2(src / "labels.geojson", out / "tiles" / area["id"] / "labels.geojson")
             labels = f"tiles/{area['id']}/labels.geojson"
-        mask = copy_mask(area["id"], out / "tiles" / area["id"], have)
+        mask = copy_mask(area["id"], out / "tiles" / area["id"], sorted(have_all))
         listing.append(
             {
                 **area,
