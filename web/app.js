@@ -371,7 +371,7 @@ function showPlayer(userId) {
     popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, maxWidth: "260px", offset: 22, className: "card" });
     popup.on("close", () => { popupUser = null; popup = null; });
   }
-  if (!updatePlayer(lastState)) popup.remove();
+  if (!updatePlayer(lastState) && popup) popup.remove(); // updatePlayer may have closed it already
 }
 
 // Refreshes the open card from the latest state; false when there is nothing to show.
@@ -1054,6 +1054,8 @@ function backNow() {
     const [at, tick] = left.split(":");
     if (at === sid && lastState.tick - Number(tick) >= REPORT_AFTER) showReport(Number(tick));
   }
+  // Before the game has loaded there is nothing to resume or unshield yet: keep the flags for the first input after.
+  if (!sid || !lastState) return;
   if (autoPaused) {
     autoPaused = false;
     store.del("autopaused");
