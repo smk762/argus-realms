@@ -58,3 +58,31 @@ def test_an_ownerless_garrison_has_no_kill_streak():
     r = digest(sieges, NAMES, 1, 0, 100)
     assert not any("tear" in s["headline"] for s in r["stories"])
     assert None not in r["stats"].get("kills", {})
+
+
+def _story(drama, family, mine=False, brief="b", head="h"):
+    return {"drama": drama, "family": family, "mine": mine, "head": head, "text": "t", "brief": brief}
+
+
+def test_your_stories_survive_the_front_page_cut():
+    from atlas_realms.news import MAX_STORIES, _edit
+
+    big = [_story(20, f, head=f) for f in ("siege", "fight", "capture", "grab", "loot")]
+    mine = _story(6, "fight", mine=True, head="yours")
+    page = _edit([*big, mine], lambda xs: xs[0])
+    heads = [s["headline"] for s in page]
+    assert "yours" in heads and len(page) == MAX_STORIES
+
+
+def test_stories_without_briefs_make_no_empty_round_up():
+    from atlas_realms.news import _edit
+
+    page = _edit([_story(7, "streak", brief="") for _ in range(3)], lambda xs: xs[0])
+    assert all(s["text"] != "." for s in page) and len(page) == 1
+
+
+def test_a_real_story_with_no_drama_is_not_a_round_up():
+    from atlas_realms.news import _edit
+
+    page = _edit([_story(0, "streak", head="quiet one")], lambda xs: xs[0])
+    assert [s["headline"] for s in page] == ["quiet one"]

@@ -278,18 +278,25 @@ def _edit(stories: list[dict], pick, desk: dict = STRAIT) -> list[dict]:
         elif others:
             counted = Counter(o["brief"] for o in others if o["brief"])  # keeps first-seen order
             briefs = [b if n == 1 else f"{b} (×{n})" for b, n in counted.items()]
+            if not briefs:  # nothing to round up (stories without a one-line brief)
+                continue
             more = len(briefs) - ROUNDUP_ITEMS
             text = "; ".join(briefs[:ROUNDUP_ITEMS]) + (f"; and {more} more" if more > 0 else "") + "."
             lead.append(
                 {
+                    "roundup": True,
                     "drama": 0,
+                    "mine": False,
                     "family": family,
                     "head": pick(ROUNDUPS[family]).format(where=desk["where"]),
                     "text": text[0].upper() + text[1:],
                 }
             )
-    top = sorted((s for s in lead if s["drama"]), key=lambda s: -s["drama"])[:MAX_STORIES]
-    roundups = sorted((s for s in lead if not s["drama"]), key=lambda s: ROUNDUP_ORDER.index(s["family"]))[
+    # Yours always run; the other kinds' leads fill what is left of MAX_STORIES.
+    yours = [s for s in lead if s["mine"] and not s.get("roundup")]
+    theirs = [s for s in lead if not s["mine"] and not s.get("roundup")]
+    top = sorted(yours + theirs[: max(0, MAX_STORIES - len(yours))], key=lambda s: -s["drama"])
+    roundups = sorted((s for s in lead if s.get("roundup")), key=lambda s: ROUNDUP_ORDER.index(s["family"]))[
         :MAX_ROUNDUPS
     ]
     return [{"headline": s["head"], "text": s["text"]} for s in top + roundups]
