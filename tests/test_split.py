@@ -93,6 +93,7 @@ def test_caps_grow_half_again_rounded_up():
 
 
 def test_grown_caps_ignore_floating_point_noise():
-    t = DEFAULT.model_copy(update={"hex_cap": 10, "hex_cap_with_capital": 20, "split_cap_growth": 1.1})
+    # 50 * 1.1 is 55.00000000000001 in floating point
+    t = DEFAULT.model_copy(update={"hex_cap": 50, "hex_cap_with_capital": 50, "split_cap_growth": 1.1})
     grown = after_split(t, 6)
-    assert (grown.hex_cap, grown.hex_cap_with_capital) == (11, 22)
+    assert (grown.hex_cap, grown.hex_cap_with_capital) == (55, 55)
