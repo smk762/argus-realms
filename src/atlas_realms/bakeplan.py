@@ -79,6 +79,17 @@ def foreign_jobs_guard(prefix: str, commit: str) -> str:
     )
 
 
+def other_zoom_guard(prefix: str, zoom: int) -> str:
+    """Refuse to bake beside chunks of another zoom (a re-bake at a finer zoom): their tiles overlap, so the export
+    fails on them, but only after the whole run."""
+    return (
+        f"# Chunks of another zoom here would overlap these: move them aside first (a finer re-bake replaces them).\n"
+        f"other=$(ls -d {MAPS}/{prefix}*/*/job.json 2>/dev/null | grep -Ev -- '-{zoom}-[0-9]+-[0-9]+/job.json$' || true)\n"
+        f'[ -z "$other" ] || {{ echo "chunks of another zoom than z{zoom} under $ATLAS_MAPS/{prefix}:"; '
+        f'echo "$other" | head -3; exit 1; }}\n'
+    )
+
+
 GPU_ENV = (
     "ARGUS_GPU_COORDINATOR",
     "ARGUS_GPU_BROKER_URL",
@@ -235,6 +246,7 @@ def main(argv: list[str] | None = None) -> None:
     if not a.image:
         out(build_steps(a.commit))
     out(foreign_jobs_guard(prefix, a.commit))
+    out(other_zoom_guard(prefix, a.zoom))
     out(run_line(image) + "\n\n")
     dem = f"/data/dem/{a.name}_glo30.tif"
     places = f"/data/dem/osm/{a.name}-places/places.geojson"

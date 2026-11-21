@@ -14,6 +14,9 @@ docker image inspect argus-atlas:597cf38 >/dev/null 2>&1 || { echo 'build argus-
 # Chunks of another argus-atlas build here would be seamed against: re-bake into a fresh ATLAS_MAPS.
 foreign=$(grep -L 597cf38d0cfa485fc310d3d2f64d596f78badd57 "$ATLAS_MAPS"/areas/cape/*/*/job.json 2>/dev/null || true)
 [ -z "$foreign" ] || { echo "jobs from another argus-atlas build under $ATLAS_MAPS/areas/cape/:"; echo "$foreign" | head -3; exit 1; }
+# Chunks of another zoom here would overlap these: move them aside first (a finer re-bake replaces them).
+other=$(ls -d "$ATLAS_MAPS"/areas/cape/*/*/job.json 2>/dev/null | grep -Ev -- '-10-[0-9]+-[0-9]+/job.json$' || true)
+[ -z "$other" ] || { echo "chunks of another zoom than z10 under $ATLAS_MAPS/areas/cape/:"; echo "$other" | head -3; exit 1; }
 RUN="docker run --rm -u $(id -u):$(id -g) -w /tmp --add-host host.docker.internal:host-gateway -e COMFYUI_BASE_URL=http://host.docker.internal:8188 -e ATLAS_ALLOW_BAKE=1 -e ATLAS_RECIPES_DIR=/data/recipes -e ATLAS_MODELS_DIR=/data/models -e ATLAS_JOBS_DIR=/data/out/atlas -e ARGUS_GPU_COORDINATOR -e ARGUS_GPU_BROKER_URL -e ARGUS_GPU_BROKER_TOKEN -e ARGUS_GPU_BROKER_FALLBACK -e ARGUS_GPU_LEASE_TIMEOUT_S -e ATLAS_GPU_PRIORITY -e ARGUS_GPU_TENANT_MANIFEST=/app/gpu-tenant.yaml -v $ATLAS_HOST/dem:/data/dem -v $ATLAS_HOST/recipes:/data/recipes:ro -v $ATLAS_MODELS:/data/models:ro -v $ATLAS_MAPS:/data/out/atlas argus-atlas:597cf38"
 
 # 1. DEM: Copernicus GLO-30 for the block plus margins, one GeoTIFF (all-sea tiles are filled with 0 m)
