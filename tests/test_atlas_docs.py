@@ -262,3 +262,23 @@ def test_a_setext_title_is_not_doubled(atlas: Path, vendor: Path) -> None:
     _git(atlas, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "setext")
     html = ad.render(ad.import_docs(atlas, "HEAD"), vendor).html
     assert html.count('id="cli"') == 1
+
+
+def test_realms_own_docs_and_bake_plans_pass_the_opsec_gate() -> None:
+    """The bake plans run on the GPU host but read its layout from the environment: no host paths, host names or LAN
+    addresses are committed, in them or in this repo's own docs. The imported docs/atlas/ are checked against their
+    record above. The one address allowed is the GitHub noreply commit identity docs/deploy.md asks for."""
+    root = Path(__file__).resolve().parent.parent
+    tracked = subprocess.run(["git", "-C", str(root), "ls-files"], check=True, capture_output=True, text=True).stdout
+    paths = [
+        p
+        for p in tracked.split()
+        if p.startswith("bakes/") or (p.endswith(".md") and not p.startswith(("docs/atlas/", "site/vendor/")))
+    ]
+    assert "bakes/cook-strait.sh" in paths and "README.md" in paths
+    found = {
+        p: hits
+        for p in paths
+        if (hits := [f for f in ad.opsec_findings((root / p).read_text()) if "users.noreply.github.com" not in f])
+    }
+    assert found == {}
