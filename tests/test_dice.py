@@ -41,3 +41,33 @@ def test_range_and_rough_uniformity():
 def test_empty_range_rejected():
     with pytest.raises(ValueError):
         Dice(b"x").randint(5, 4)
+
+
+def test_the_stream_is_the_documented_one():
+    """Players re-run battles from logs with their own code, so the stream is a public contract: block i is
+    SHA256(seed || i as 8-byte big-endian), read as 4-byte big-endian words, rejection-sampled into [lo, hi].
+    Changing it invalidates every published log."""
+
+    def words(seed: bytes):
+        i = 0
+        while True:
+            block = hashlib.sha256(seed + i.to_bytes(8, "big")).digest()
+            yield from (int.from_bytes(block[j : j + 4], "big") for j in range(0, 32, 4))
+            i += 1
+
+    def reference(seed: bytes, ranges: list[tuple[int, int]]) -> list[int]:
+        stream, out = words(seed), []
+        for lo, hi in ranges:
+            n = hi - lo + 1
+            limit = 2**32 - 2**32 % n
+            w = next(stream)
+            while w >= limit:
+                w = next(stream)
+            out.append(lo + w % n)
+        return out
+
+    seed = battle_seed(b"day-secret", tick_id=1440, battle_id=7)
+    ranges = [(1, 100), (16, 22), (0, 2**31 + 1), (5, 5), (1, 6)] * 40  # 2**31 + 2 values rejects about half the words
+    dice = Dice(seed)
+    assert [dice.randint(lo, hi) for lo, hi in ranges] == reference(seed, ranges)
+    assert Dice(b"").d100() == 1 + int.from_bytes(hashlib.sha256(bytes(8)).digest()[:4], "big") % 100
