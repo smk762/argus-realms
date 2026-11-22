@@ -33,3 +33,6 @@ node_modules/
 # The browser arena: build output and the downloaded Pyodide wheels
 arena/dist/
 arena/.cache/
+
+# Private names for the opsec gate (scripts/atlas_docs.py); CI uses the OPSEC_DENYLIST secret. Never commit.
+.opsec-denylist

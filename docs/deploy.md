@@ -67,7 +67,7 @@ Atlas publishes the argus-atlas docs at `/docs/`, and "How it was made" links ea
 - `make atlas-docs` (`ATLAS_DIR=<argus-atlas checkout>`, `ATLAS_REF=origin/dev` by default) imports them at a commit; follow it with `make bake-plans`, so every plan bakes at that commit. It reads with `git show`, so the checkout's working tree doesn't matter, and it refuses a doc that fails the opsec gate (private addresses, home paths, emails, host names, `OPSEC_DENYLIST`). `docs/your-first-bake.md` is never imported.
 - `make static` refuses tiles whose bakes record another argus-atlas commit than `sync.json`, and tiles from a build before 0.4, which recorded none. It checks this before touching `dist/static`, so a refused build leaves the last good one in place. Re-bake with an image built at the docs' commit, or import the docs at the bakes' commit, and commit both together.
 - The `argus-atlas drift` workflow runs daily and opens an issue (or comments on the open one) when argus-atlas `dev` moves past `sync.json`.
-- `make static-check` (CI) checks the import offline: the record, the opsec gate, the render, and every anchor the panel links to.
+- `make static-check` (CI) checks the import offline: the record, the opsec gate, the render, and every anchor the panel links to. The gate's private names come from `OPSEC_DENYLIST` (a repository secret in CI; locally the environment or a gitignored `.opsec-denylist` file) and are never committed; unset, only that check is skipped.
 
 ## 6. Build and deploy
 

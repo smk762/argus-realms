@@ -45,9 +45,10 @@ skip locally unless `ATLAS_REALMS_TEST_DSN` is set (`make test-db`).
 | A save that runs code, or loads into another build or a missing region | `tests/test_arena_bridge.py::test_a_save_cannot_run_code`, `::test_save_from_another_build_is_refused`, `::test_a_save_from_a_missing_region_is_refused` |
 | Arena runtime code that needs range requests (PMTiles on Pages), or a build past the Pages limits | CI `arena`: `arena/test/no-range.test.mjs`; `tests/test_arena_tools.py::test_exactly_the_file_limit_is_allowed` (`arena/build.py` `check_pages_limits`) |
 | Tiles baked at another argus-atlas commit than the imported docs | `tests/test_atlas_docs.py::test_tiles_from_another_build_are_refused` (`make static` refuses); the `atlas-drift` workflow opens an issue when argus-atlas `dev` moves past `docs/atlas/sync.json` |
-| An edited, extra or unlisted file in `docs/atlas/`, or an imported doc failing the opsec gate | `tests/test_atlas_docs.py::test_the_record_catches_an_edited_extra_or_forbidden_file`, `::test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere`, `::test_import_refuses_a_doc_that_fails_the_opsec_gate`; CI `static` (`build_static.py --check`, with `OPSEC_DENYLIST`) |
+| An edited, extra or unlisted file in `docs/atlas/`, or an imported doc failing the opsec gate | `tests/test_atlas_docs.py::test_the_record_catches_an_edited_extra_or_forbidden_file`, `::test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere`, `::test_import_refuses_a_doc_that_fails_the_opsec_gate`, `::test_the_denylist_matches_whole_words_case_insensitively`; CI `static` (`build_static.py --check`, with `OPSEC_DENYLIST`) |
 | A stale or hand-edited bake plan, or one baking with an image of another argus-atlas commit or chunk zoom | `tests/test_bakeplan.py::test_the_committed_plans_are_current`, `::test_the_default_build_is_the_docs_commit`, `::test_a_plan_refuses_chunks_of_another_zoom` |
-| Host paths, host names or LAN addresses in `bakes/` or this repo's own docs | `tests/test_atlas_docs.py::test_realms_own_docs_and_bake_plans_pass_the_opsec_gate` |
+| Host paths, host names or LAN addresses in `bakes/` or this repo's own docs | `tests/test_atlas_docs.py::test_realms_own_docs_and_bake_plans_pass_the_opsec_gate` (host names from `OPSEC_DENYLIST`, CI jobs `python` and `db`) |
+| A machine name committed anywhere, the opsec gate's own source and tests included | `tests/test_atlas_docs.py::test_the_denylist_file_is_never_committed` (`.opsec-denylist` gitignored); the names themselves: **UNENFORCED** beyond the gate's files, review only (a check would have to name them) |
 | An inline script or style on a page (the CSPs allow none), or a pasted demo strip that drifts from `dh-strip.html` | `tests/test_build_static.py::test_an_inline_script_on_any_page_fails_the_build`; CI `static` (`build_static.py --check`); CI `arena` (`arena/build.py` runs `check_page`) |
 | An edited copy in `site/vendor/dh/` | CI `dh-shared` job (`sync-shared.mjs --check`) |
 | One client filling the solo arena, or a live game evicted for a new one | `tests/test_api.py::test_one_client_cannot_fill_the_arena`, `::test_a_full_arena_refuses_new_games_instead_of_evicting_live_ones`, `::test_the_bot_roster_is_bounded` |
@@ -185,7 +186,11 @@ make preview   # export var/maps/areas -> var/tiles-areas and serve the solo are
   hashes (bump the hash with the version), and `scripts/build_static.py` writes the CSP into `_headers`, hashing the
   inline `<style>`. A new third-party origin needs a CSP change there. The docs page (`/docs/`, `docs/index.html` in the build) is rendered at build time from the
   argus-atlas docs imported into `docs/atlas/` (`scripts/atlas_docs.py`, `make atlas-docs`; `sync.json` records the atlas
-  commit, version and file hashes): never edit them, re-import. Its styles live in `site/docs/docs.css`, so it adds no CSP
+  commit, version and file hashes): never edit them, re-import. The opsec gate there reads the private names (the suite's machine
+  names) only from `OPSEC_DENYLIST`: comma- or newline-separated, whole words, case-insensitive; the repository secret
+  in CI, the environment or the gitignored `.opsec-denylist` file locally. Never commit them, in the gate, a test, a
+  fixture, a comment or a commit message (tests use obviously fake terms). Unset (a PR from a fork gets no
+  secrets), the name check is skipped with one stderr notice and the IP, path and email checks still run. Its styles live in `site/docs/docs.css`, so it adds no CSP
   hash. `make static` refuses tiles baked at another atlas commit than the docs (docs/deploy.md §5); "How it was made"
   and the style tooltips read the bake from the export manifest (`atlas_realms.tiles.bake_summary`), never hard-code it.
   `site/vendor/dh/` is the vendored Dragonhound shared layer (tokens, demo strip, badge, `dh-theme.js`), pinned by
