@@ -3,7 +3,7 @@
   if (typeof window === "undefined" || window.__dragonhound) return;
   window.__dragonhound = true;
   // 78x39 cells, generated for 12px/17px monospace (cell aspect ~2.4).
-  // Eye accents: {..} dragon eye, [..] its pupil, <..> dog eye (brackets are not drawn).
+  // Eye accents: {..} the big eye, [..] its pupil, <..> the hound's eye (brackets are not drawn).
   const logo = String.raw`~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ *. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ +##= ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

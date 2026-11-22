@@ -4,11 +4,11 @@
     python scripts/atlas_docs.py check                                              # offline: what CI runs
 
 **Import** reads each doc in :data:`DOCS` from an argus-atlas checkout *at a commit* (``git show``, so the working
-tree doesn't matter), runs the opsec gate (private addresses, home paths, emails, host names, and ``OPSEC_DENYLIST``),
-copies the images they use, and writes ``docs/atlas/sync.json``: the atlas commit and version, and the SHA256 of every
-file. The version is what hatch-vcs gives a build of that commit (setuptools-scm in a clean worktree), the same
-string a bake records in ``job.json``. ``docs/your-first-bake.md`` (once ``docs/first-bake.md``) is never imported: it
-is a GPU-host runbook, not demo documentation.
+tree doesn't matter), runs the opsec gate (private addresses, home paths, emails, and the private names in
+``OPSEC_DENYLIST``), copies the images they use, and writes ``docs/atlas/sync.json``: the atlas commit and version, and
+the SHA256 of every file. The version is what hatch-vcs gives a build of that commit (setuptools-scm in a clean
+worktree), the same string a bake records in ``job.json``. ``docs/your-first-bake.md`` (once ``docs/first-bake.md``)
+is never imported: it is a GPU-host runbook, not demo documentation.
 
 **Render** turns the imported markdown into one page at build time, so no markdown parser ships to the browser:
 every heading gets an id (``<doc>-<slug>``) for deep links, links between imported docs become in-page anchors, other
@@ -63,16 +63,20 @@ DOCS = (
 NEVER_IMPORT = {"docs/your-first-bake.md", "docs/first-bake.md"}
 
 # The opsec gate Studio and Lightbox run on what they import, and argus-atlas's own tests/test_rules.py runs on its
-# docs: private and CGNAT IPv4, home and mount paths, emails, the suite's GPU hosts, plus OPSEC_DENYLIST (comma- or
-# newline-separated private names; CI fills it from a secret, so the list stays out of git).
+# docs: private and CGNAT IPv4, home and mount paths, emails, plus the private names (the suite's GPU hosts and the
+# like) in OPSEC_DENYLIST. The names are never committed, not even here: CI fills OPSEC_DENYLIST from the Actions secret
+# of the same name, and a local run reads it from the environment or the untracked .opsec-denylist file (gitignored).
+# Comma- or newline-separated, matched case-insensitively as whole words. With neither set, the name check is skipped
+# (said once, on stderr) and the other checks still run.
 OPSEC = {
     "private IPv4": re.compile(
         r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01])|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}\b"
     ),
     "home or mount path": re.compile(r"(?:/home/|/Users/|/root/|/mnt/|/media/|[A-Z]:\\Users\\)[\w.-]+"),
     "email": re.compile(r"\b[\w.%+-]+@(?!example\.(?:com|org)\b)[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b"),
-    "machine name": re.compile(r"\b(?:morpheus|jarrah|dragon)\b", re.IGNORECASE),
 }
+DENYLIST_FILE = ROOT / ".opsec-denylist"
+_denylist_notice_given = False
 
 
 class DocsError(Exception):
@@ -83,10 +87,36 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def denylist_terms() -> list[str]:
+    """The private names: ``OPSEC_DENYLIST`` plus the untracked :data:`DENYLIST_FILE`, comma- or newline-separated."""
+    raw = os.environ.get("OPSEC_DENYLIST", "")
+    if DENYLIST_FILE.is_file():
+        raw += "\n" + DENYLIST_FILE.read_text()
+    return [t.strip() for t in re.split(r"[,\n]", raw) if t.strip()]
+
+
+def denylist_pattern(terms: list[str]) -> re.Pattern[str] | None:
+    """Every term as a whole word (not inside a longer one), case-insensitively; None when there are none."""
+    if not terms:
+        return None
+    alternatives = "|".join(re.escape(t) for t in sorted(set(terms), key=len, reverse=True))
+    return re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)", re.IGNORECASE)
+
+
 def opsec_findings(text: str) -> list[str]:
+    global _denylist_notice_given
     found = [f"{label}: {m.group(0)!r}" for label, rx in OPSEC.items() for m in rx.finditer(text)]
-    terms = [t.strip() for t in re.split(r"[,\n]", os.environ.get("OPSEC_DENYLIST", "")) if t.strip()]
-    found += ["an OPSEC_DENYLIST term" for t in terms if t.lower() in text.lower()]  # never echo a secret term
+    denied = denylist_pattern(denylist_terms())
+    if denied:
+        hits = {m.group(0).lower() for m in denied.finditer(text)}
+        found += ["an OPSEC_DENYLIST term"] * len(hits)  # one per term found, never echoing it
+    elif not _denylist_notice_given:
+        _denylist_notice_given = True
+        print(
+            "opsec gate: OPSEC_DENYLIST is not configured (env, Actions secret or .opsec-denylist); "
+            "machine names are not checked",
+            file=sys.stderr,
+        )
     return found
 
 

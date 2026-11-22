@@ -12,6 +12,10 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    env:
+      # Private names the opsec gate refuses (tests/test_atlas_docs.py runs it on this repo's docs and bakes/), kept
+      # out of git. Empty (e.g. a PR from a fork, which gets no secrets) skips only the name check.
+      OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +35,8 @@ jobs:
   static:
     runs-on: ubuntu-latest
     env:
-      # Private names the opsec gate refuses in the imported docs, kept out of git. Empty is fine.
+      # Private names the opsec gate refuses in the imported docs, kept out of git. Empty (e.g. a PR from a fork,
+      # which gets no secrets) skips only the name check.
       OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +84,10 @@ jobs:
   # Schema and tick tests against Postgres 16 + PostGIS + h3-pg, built from db/Dockerfile.
   db:
     runs-on: ubuntu-latest
+    env:
+      # Private names the opsec gate refuses (tests/test_atlas_docs.py runs it on this repo's docs and bakes/), kept
+      # out of git. Empty (e.g. a PR from a fork, which gets no secrets) skips only the name check.
+      OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
     steps:
       - uses: actions/checkout@v4
         with:

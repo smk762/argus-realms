@@ -73,6 +73,7 @@ def vendor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(ad, "RECORD", out / "sync.json")
     monkeypatch.setattr(ad, "atlas_version", lambda repo, commit: "0.3.1.dev41+gabc1234")  # offline
     monkeypatch.delenv("OPSEC_DENYLIST", raising=False)
+    monkeypatch.setattr(ad, "DENYLIST_FILE", tmp_path / "no-denylist")  # a local .opsec-denylist never leaks in
     return out
 
 
@@ -105,6 +106,53 @@ def test_import_refuses_a_doc_that_fails_the_opsec_gate(atlas: Path, vendor: Pat
     monkeypatch.setenv("OPSEC_DENYLIST", "Bake one map")
     with pytest.raises(ad.DocsError, match="an OPSEC_DENYLIST term"):
         ad.import_docs(atlas, "HEAD")
+
+    (atlas / "docs/cli.md").write_text("# CLI\n\nComfyUI on http://ExampleHost:8188\n")  # a fake machine name
+    _git(atlas, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "host")
+    monkeypatch.setenv("OPSEC_DENYLIST", "examplehost")
+    with pytest.raises(ad.DocsError, match="fails the opsec gate: .*an OPSEC_DENYLIST term") as refused:
+        ad.import_docs(atlas, "HEAD")
+    assert "examplehost" not in str(refused.value).lower()  # never echo a secret term
+
+
+# --- the deny list: private names from OPSEC_DENYLIST or the untracked file, never from git -------------------------
+
+# Obviously fake names: the real ones live only in the secret.
+FAKE_TERMS = "examplehost, Other-Box"
+
+
+def test_the_denylist_matches_whole_words_case_insensitively(vendor: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPSEC_DENYLIST", FAKE_TERMS)
+    for text in ("ssh examplehost", "http://EXAMPLEHOST:8188/", "on ExampleHost.", "via other-box today"):
+        assert ad.opsec_findings(text) == ["an OPSEC_DENYLIST term"], text
+    for text in ("examplehosts", "myexamplehost", "examplehost_2", "other-boxes", "another-box"):
+        assert ad.opsec_findings(text) == [], text  # a term inside a longer word is not that name
+
+
+def test_the_denylist_also_reads_the_untracked_file(vendor: Path, tmp_path: Path, monkeypatch) -> None:
+    file = tmp_path / ".opsec-denylist"
+    file.write_text("examplehost\nOther-Box\n")
+    monkeypatch.setattr(ad, "DENYLIST_FILE", file)
+    assert ad.denylist_terms() == ["examplehost", "Other-Box"]
+    monkeypatch.setenv("OPSEC_DENYLIST", "envhost")
+    assert ad.denylist_terms() == ["envhost", "examplehost", "Other-Box"]
+    assert ad.opsec_findings("envhost and other-box") == ["an OPSEC_DENYLIST term"] * 2
+    assert ad.opsec_findings("envhost, ENVHOST, envhost") == ["an OPSEC_DENYLIST term"]  # one per term, not per hit
+
+
+def test_without_a_denylist_the_name_check_is_skipped_once_and_the_rest_still_runs(
+    vendor: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(ad, "_denylist_notice_given", False)
+    assert ad.opsec_findings("ssh examplehost") == []
+    assert ad.opsec_findings("examplehost at 10.0.0.5") == ["private IPv4: '10.0.0.5'"]
+    assert capsys.readouterr().err.count("OPSEC_DENYLIST is not configured") == 1
+
+
+def test_the_denylist_file_is_never_committed() -> None:
+    root = Path(__file__).resolve().parent.parent
+    ignored = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", ".opsec-denylist"], check=False)
+    assert ignored.returncode == 0
 
 
 def test_the_record_catches_an_edited_extra_or_forbidden_file(atlas: Path, vendor: Path) -> None:
