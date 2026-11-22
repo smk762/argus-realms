@@ -1,15 +1,26 @@
-# CLAUDE.md — atlas-realms
+# CLAUDE.md — argus-realms
 
-Guidance for AI agents working in this repo. Human-facing usage lives in [README.md](README.md).
+Guidance for AI agents working in this repo (Python package `atlas-realms`). Human-facing usage lives in [README.md](README.md).
 
 ## What this is
 
-The browser game that demonstrates argus-atlas, plus the static map demo, Atlas, at https://atlas.dragonhound.dev (`site/`). realms.dragonhound.dev is reserved
-for the game and redirects to Atlas until the game is hosted.
+The browser game that demonstrates argus-atlas, plus the static map demo, Atlas, at https://atlas.dragonhound.dev (`site/`).
+The game's solo arena is hosted at https://realms.dragonhound.dev (`arena/`, a static site running the Python rules in
+Pyodide); the shared world (Postgres, the tick runner) needs its own server and isn't hosted yet.
 The design doc (not public) is the source of truth for rules and numbers; `Tunables` and the tests mirror it.
 
 The game consumes argus-atlas as a pip package (and, later, through a GPU bake worker). General map
 features go into argus-atlas; anything game-specific stays here. argus-atlas's own scope is "no game".
+
+## Argus suite
+<!-- argus-suite: keep this block; argus-ci checks for it -->
+This repo is part of the Argus suite. The suite map below lists every sibling and what it owns; check it before
+building something a sibling may already do. **On every release, update this repo's row and capabilities in
+argus-cortex's SUITE.md** (a PR to argus-cortex in the same release).
+
+@../argus-core/SUITE.md
+
+Not checked out? Read https://github.com/smk762/argus-cortex/blob/dev/SUITE.md
 
 ## Layout
 
