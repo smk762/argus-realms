@@ -93,10 +93,10 @@ def test_import_copies_the_docs_and_their_images_at_one_commit(atlas: Path, vend
 
 
 def test_import_refuses_a_doc_that_fails_the_opsec_gate(atlas: Path, vendor: Path, monkeypatch) -> None:
-    (atlas / "docs/cli.md").write_text("# CLI\n\nComfyUI on http://192.168.1.20:8188\n")
+    (atlas / "docs/cli.md").write_text("# CLI\n\nComfyUI on http://192.168.200.20:8188\n")
     _git(atlas, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "leak")
     with pytest.raises(
-        ad.DocsError, match=r"docs/cli.md at \w{7} fails the opsec gate: .*private IPv4: '192.168.1.20'"
+        ad.DocsError, match=r"docs/cli.md at \w{7} fails the opsec gate: .*private IPv4: '192.168.200.20'"
     ):
         ad.import_docs(atlas, "HEAD")
     assert not vendor.exists()  # nothing written
