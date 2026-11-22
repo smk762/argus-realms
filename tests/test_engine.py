@@ -860,3 +860,12 @@ def test_double_march_on_own_land_halves_the_cost_once():
     out = step(w, n=math.ceil(need / per_tick) - 1)
     assert out.world.units[1].path  # one tick short
     assert step(out.world).world.units[1].hex == line[-1]
+
+
+def test_a_contract_runs_its_minutes_whatever_the_tick_length():
+    t = DEFAULT.model_copy(update={"tick_seconds": 30})  # two ticks a minute
+    out = step(services_world(), [hire(1, 2, "guard")], t=t)
+    out = step(out.world, t=t, n=DEFAULT.guard_minutes)  # half the job's minutes
+    assert out.world.contracts[1].status == "active"
+    out = step(out.world, t=t, n=DEFAULT.guard_minutes)
+    assert out.world.contracts[1].status == "done"

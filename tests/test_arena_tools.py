@@ -129,3 +129,53 @@ def test_copying_tiles_again_replaces_the_previous_build(tmp_path, monkeypatch):
     (dest / "antique" / "9" / "1" / "1.webp").write_bytes(b"stale")
     assert build.copy_tiles(tiles, dest, manifest, outline) == first
     assert not (dest / "antique" / "9").exists()
+
+
+def test_fog_image_leaves_the_global_rng_alone():
+    import random
+
+    random.seed(1)
+    want = random.random()
+    random.seed(1)
+    sea_fog.fog_image([174.0, -42.0, 175.0, -41.0], width=64)
+    assert random.random() == want
+
+
+def test_fog_image_of_a_block_narrower_than_the_feather_is_all_fog():
+    png, _, _ = sea_fog.fog_image([174.0, -41.0, 174.01, -40.99], width=64)
+    import io
+
+    alpha = PIL.open(io.BytesIO(png)).convert("RGBA").getchannel("A")
+    assert alpha.getextrema()[0] > 0  # nowhere fully clear
+
+
+def test_sea_edges_skip_chunks_of_another_zoom():
+    # (8, 1, 0) read as a z10 chunk would face the missing (10, 2, 0) to its east.
+    ready = {(10, 0, 0), (8, 1, 0)}
+    assert list(sea_fog._sea_edges(ready, 10, (0, 0, 2, 0))) == [((0, 0), "e")]
+
+
+# -- sea_fill ----------------------------------------------------------------------------------------
+
+
+def test_push_pull_with_nothing_known_is_the_fallback():
+    import sea_fill
+
+    out = sea_fill._push_pull(PIL.new("RGB", (16, 16), (1, 2, 3)), PIL.new("L", (16, 16), 0), fallback=(10, 20, 30))
+    assert out.getcolors() == [(256, (10, 20, 30))]
+
+
+def test_a_one_pixel_ramp_is_its_start():
+    import sea_fill
+
+    assert sea_fill._ramp(1, 4, vertical=False).getcolors() == [(4, 255)]
+    assert sea_fill._ramp(1, 4, vertical=True).size == (4, 1)
+
+
+def test_levelling_keeps_the_painted_alpha():
+    import sea_fill
+
+    canvas = PIL.new("RGBA", (64, 64), (20, 60, 120, 128))
+    mask = PIL.new("L", (64, 64), 0)
+    out = sea_fill._level_painted_seams(canvas, mask, set(), (0, 0), 64)
+    assert out.getchannel("A").getextrema() == (128, 128)

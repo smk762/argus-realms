@@ -185,3 +185,12 @@ def test_a_re_export_without_names_removes_the_old_labels(tmp_path):
     assert export_labels(maps, out) == 1 and (out / "labels.geojson").exists()
     (job / "labels.geojson").unlink()
     assert export_labels(maps, out) == 0 and not (out / "labels.geojson").exists()
+
+
+def test_clip_ring_closes_once_and_drops_what_only_touches_the_box():
+    from atlas_realms.seed import _clip_ring
+
+    square = [(1, 1), (2, 1), (2, 2), (1, 2), (1, 1)]
+    assert _clip_ring(square, (0, 0, 3, 3)) == square  # wholly inside: unchanged, closed once
+    assert _clip_ring([(3, 0), (4, 0), (4, 3), (3, 3), (3, 0)], (0, 0, 3, 3)) == []  # touches the east edge only
+    assert _clip_ring([(3, 3), (4, 3), (4, 4), (3, 3)], (0, 0, 3, 3)) == []  # touches a corner

@@ -168,6 +168,7 @@ class Arena:
             return s.state()
         if verb == "orders" and method == "POST":
             o = OrderIn.model_validate(body)
+            s.catch_up(now)  # the order joins the next tick due from now, not one already past (restore's shield aside)
             try:
                 return {"id": s.submit(o.kind, o.payload)}
             except ValueError as e:
@@ -275,8 +276,13 @@ class Arena:
 
     def handle(self, request: str) -> str:
         """JSON in, JSON out, for the worker: {op, method, url, body, now, blob, away} -> {status, body}."""
-        r = json.loads(request)
         try:
+            try:
+                r = json.loads(request)
+            except ValueError as e:
+                raise HttpError(400, "request is not JSON") from e
+            if not isinstance(r, dict):
+                raise HttpError(400, "request must be a JSON object")
             op = r.get("op", "call")
             if op == "call":
                 out = self.call(r["method"], r["url"], r.get("body"), r["now"])

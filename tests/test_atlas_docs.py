@@ -235,3 +235,30 @@ def test_the_export_summarises_each_styles_bakes() -> None:
     assert s["atlas"] == [gen] and s["lora"] == []
     old = bake_summary([{**job(31, None), "sources": None}])  # a bake from before argus-atlas 0.4
     assert old["atlas"] == [{"version": None, "commit": None}] and old["commands"] == ["chunk"]
+
+
+def test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere(atlas: Path, vendor: Path) -> None:
+    record = ad.import_docs(atlas, "HEAD")
+    (vendor / "secret.md").write_text("# Not vetted\n")
+    unvetted = {
+        **record,
+        "files": {**record["files"], "docs/secret.md": {"as": "secret.md", "sha256": ad.sha256(b"# Not vetted\n")}},
+    }
+    (vendor / "sync.json").write_text(json.dumps(unvetted))
+    with pytest.raises(ad.DocsError, match="not in DOCS"):
+        ad.load_record(vendor)
+    (vendor / "secret.md").unlink()
+    outside = vendor.parent / "outside.md"
+    outside.write_text("x")
+    moved = json.loads(json.dumps(record))
+    moved["files"]["docs/cli.md"] = {"as": "../outside.md", "sha256": ad.sha256(b"x")}
+    (vendor / "sync.json").write_text(json.dumps(moved))
+    with pytest.raises(ad.DocsError, match="vendors docs/cli.md as '../outside.md'"):
+        ad.load_record(vendor)
+
+
+def test_a_setext_title_is_not_doubled(atlas: Path, vendor: Path) -> None:
+    (atlas / "docs/cli.md").write_text("CLI\n===\n\n## `argus-atlas dem`\n")
+    _git(atlas, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "setext")
+    html = ad.render(ad.import_docs(atlas, "HEAD"), vendor).html
+    assert html.count('id="cli"') == 1

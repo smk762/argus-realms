@@ -55,15 +55,17 @@ def fog_image(bounds: list[float], width: int = 1024, seed: int = 7) -> tuple[by
     feather = FEATHER_KM / km_per_px
     mask = Image.new("L", (width, height), 255)
     inset = feather * 0.5
-    ImageDraw.Draw(mask).rectangle([block[0] + inset, block[1] + inset, block[2] - inset, block[3] - inset], fill=0)
+    clear = [block[0] + inset, block[1] + inset, block[2] - inset, block[3] - inset]
+    if clear[0] < clear[2] and clear[1] < clear[3]:  # a block narrower than the feather stays fogged all over
+        ImageDraw.Draw(mask).rectangle(clear, fill=0)
     mask = mask.filter(ImageFilter.GaussianBlur(feather * 0.25))
 
     # Mist: two octaves of smooth noise, coloured between the game's fog and a lighter haze.
-    random.seed(seed)
+    rng = random.Random(seed)  # its own stream: the process's global RNG is left alone
     octaves = []
     for cells, weight in ((12, 0.65), (40, 0.35)):
         small = Image.new("L", (cells, max(2, round(cells * height / width))))
-        small.putdata([random.randint(0, 255) for _ in range(small.width * small.height)])
+        small.putdata([rng.randint(0, 255) for _ in range(small.width * small.height)])
         octaves.append((small.resize((width, height), Image.Resampling.BICUBIC), weight))
     noise = Image.blend(octaves[0][0], octaves[1][0], octaves[1][1])
     noise = ImageOps.autocontrast(noise.filter(ImageFilter.GaussianBlur(10)), cutoff=2)
@@ -80,7 +82,9 @@ def fog_image(bounds: list[float], width: int = 1024, seed: int = 7) -> tuple[by
 def _sea_edges(ready: set[tuple[int, int, int]], z: int, block: tuple[int, int, int, int]):
     """(z10 chunk, side) for every painted chunk side that faces a skipped (all-sea) chunk inside the block."""
     bx0, by0, bx1, by1 = block
-    for _, x, y in sorted(ready):
+    for cz, x, y in sorted(ready):
+        if cz != z:  # a chunk of another zoom has no z-neighbours to face
+            continue
         for side, (nx, ny) in {"w": (x - 1, y), "e": (x + 1, y), "n": (x, y - 1), "s": (x, y + 1)}.items():
             if bx0 <= nx <= bx1 and by0 <= ny <= by1 and (z, nx, ny) not in ready:
                 yield (x, y), side

@@ -1,4 +1,5 @@
 import io
+import json
 import subprocess
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -185,6 +186,8 @@ def test_plans_forward_the_gpu_lease_settings_by_name():
         ["--image", "img; echo hi"],
         ["--styles", ""],
         ["--styles", ","],
+        ["--size", "128"],
+        ["--size", "768"],
     ],
 )
 def test_values_that_would_break_the_script_are_refused(extra):
@@ -193,3 +196,26 @@ def test_values_that_would_break_the_script_are_refused(extra):
     with redirect_stdout(buf), pytest.raises(SystemExit) as e:
         main(args)
     assert e.value.code == 2 and buf.getvalue() == ""  # refused before a line of the plan is printed
+
+
+def test_whole_degree_and_antimeridian_boxes_count_their_dem_tiles():
+    assert glo30_tiles((10.0, 20.0, 10.0, 21.0)) == 1  # zero width on a whole degree
+    assert glo30_tiles((179.5, -17.5, -179.5, -16.5)) == 2 * 2  # 179..180 and -180..-179
+
+
+@pytest.mark.parametrize("how", ["empty-tiles", "all-sea"])
+def test_a_plan_with_no_chunks_is_refused(how, tmp_path):
+    if how == "empty-tiles":
+        args = ["--name", "ok", "--tiles", ","]
+    else:  # land only far away from the block
+        land = tmp_path / "land.geojson"
+        ring = [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1], [0, 0]]
+        polygon = {"type": "Polygon", "coordinates": [ring]}
+        land.write_text(
+            json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": polygon}]})
+        )
+        args = ["--name", "ok", "--center", "-41.3,174.8", "--rings", "0", "--land", str(land)]
+    buf = io.StringIO()
+    with redirect_stdout(buf), pytest.raises(SystemExit) as e:
+        main(args)
+    assert e.value.code == 2 and buf.getvalue() == ""

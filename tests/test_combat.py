@@ -61,3 +61,8 @@ def test_matches_design_doc_rates(name):
     want_dec, want_att = DOC_RATES[name]
     assert decisive == pytest.approx(want_dec, abs=0.02)
     assert attacker_share == pytest.approx(want_att, abs=0.025)
+
+
+def test_simulate_refuses_zero_battles():
+    with pytest.raises(ValueError, match="at least one battle"):
+        simulate(0.0, 0.0, 0)

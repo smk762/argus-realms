@@ -522,7 +522,8 @@ class _Tick:
         c.price = price
         w.contracts[c.id] = c
         if broken:
-            served = (self.tick - active.began) / active.minutes if active.minutes else 1
+            length = contract_ticks(active, t)
+            served = (self.tick - active.began) / length if length else 1
             refund = int(active.price * max(0.0, 1 - served))
             if refund:
                 w.users[active.hirer].treasury += refund
@@ -573,7 +574,7 @@ class _Tick:
         guard jobs one at a time per bot, in the order they were hired."""
         w = self.w
         for c in sorted(w.contracts.values(), key=lambda c: c.id):
-            if c.status == "active" and c.began + c.minutes <= self.tick:
+            if c.status == "active" and c.began + contract_ticks(c, self.t) <= self.tick:
                 c.status = "done"
         busy = {c.bot for c in w.contracts.values() if c.status == "active" and c.kind != "protect"}
         for c in sorted(w.contracts.values(), key=lambda c: c.id):
@@ -882,6 +883,11 @@ def garrison_unit(w: World, cell: str) -> Unit:
 
 def _ticks(seconds: float, t: Tunables) -> int:
     return round(seconds / t.tick_seconds)
+
+
+def contract_ticks(c: Contract, t: Tunables) -> int:
+    """How many ticks a contract runs: its length is in minutes, a tick is tick_seconds."""
+    return _ticks(c.minutes * 60, t)
 
 
 def _day(tick: int, t: Tunables) -> int:
