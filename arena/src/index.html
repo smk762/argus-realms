@@ -122,6 +122,7 @@
           <span class="sep"></span>
           <select id="swap"></select>
           <button id="swap-go">Swap class</button>
+          <button type="button" id="look-open" title="Change your colours">Look</button>
         </section>
       </div>
       <div id="attribution"></div>
@@ -166,6 +167,22 @@
       <p id="report-lead" class="small"></p>
       <div id="report-stories"></div>
       <button value="close">Back to the war</button>
+    </form>
+  </dialog>
+
+  <dialog id="look" closedby="any" aria-labelledby="look-title">
+    <form method="dialog">
+      <h1 id="look-title">Your look</h1>
+      <div id="look-preview"></div>
+      <div id="look-parts"></div>
+      <p class="small">Your tunic colour is also the colour of your land.</p>
+      <div class="buttons look-actions">
+        <button type="button" id="look-roll">🎲 Roll all</button>
+        <button type="button" id="look-reset">Reset</button>
+        <span class="grow"></span>
+        <button value="cancel">Cancel</button>
+        <button value="save" autofocus>Save</button>
+      </div>
     </form>
   </dialog>
 

@@ -161,7 +161,10 @@ async function restore(blob) {
   return r.body;
 }
 
-function colorOf(userId) { return COLORS[(userId - 1) % COLORS.length]; }
+function colorOf(userId) {
+  if (look.color && lastState && userId === lastState.you) return look.color; // your look
+  return COLORS[(userId - 1) % COLORS.length];
+}
 
 function clock(tick) {
   const minutes = tick; // one tick is one game minute
@@ -503,7 +506,10 @@ function draw(st) {
       geometry: { type: "Point", coordinates: [lng + r * Math.cos(a) * 1.3, lat + r * Math.sin(a)] },
       properties: {
         // A shielded unit sits in a bubble, in its player's shield look.
-        icon: `unit:${u.class}:${colorOf(u.user_id)}:${u.user_id === st.you ? "you" : "bot"}:${u.shield ? looks.get(u.user_id) || meta.shield_looks.plain : ""}:${faceOf(u)}`,
+        icon: unitId(
+          u.class, colorOf(u.user_id), u.user_id === st.you ? "you" : "bot",
+          u.shield ? looks.get(u.user_id) || meta.shield_looks.plain : "", faceOf(u), u.user_id === st.you ? look : {},
+        ),
         you: u.user_id === st.you,
         user_id: u.user_id,
         hpIcon: ((h) => `hp:${Math.round(h.pct / 5) * 5}:${u.user_id === st.you ? 44 : 34}:${h.colour}`)(health(u)),
@@ -900,6 +906,12 @@ function tintHex(hex, factor) { // towards white
   return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 }
 
+function mixHex(a, b, f) {
+  const [x, y] = [a, b].map((hex) => parseInt(hex.slice(1), 16));
+  const ch = (s) => Math.round(((x >> s) & 255) * (1 - f) + ((y >> s) & 255) * f);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
 // Which way a unit faces: towards its next hex while it moves, else the way it last went (front at first).
 const facing = new Map();
 function faceOf(u) {
@@ -911,9 +923,9 @@ function faceOf(u) {
   return facing.get(u.id) || "s";
 }
 
-// "unit:<class>:<colour>:<you|bot>:<shield look or empty>:<n|e|s|w>"
+// "unit:<class>:<colour>:<you|bot>:<shield look or empty>:<n|e|s|w>:<hair>:<skin>:<eyes>" (unitId)
 function unitCanvas(id) {
-  const [, cls, color, who, halo, dir = "s"] = id.split(":");
+  const [, cls, color, who, halo, dir = "s", hair, skin, eyes] = id.split(":");
   const you = who === "you";
   // Device pixels per sprite pixel. Registered at pixelRatio 2, so a bot is 48px and you are 60px.
   const scale = you ? 5 : 4;
@@ -927,8 +939,10 @@ function unitCanvas(id) {
   cv.width = cv.height = size;
   const c = cv.getContext("2d");
   c.imageSmoothingEnabled = false;
-  const [H, h, j] = HAIR[kind];
+  const [H, h, j] = hair ? [tintHex(hair, 0.3), hair, shadeHex(hair, 0.6)] : HAIR[kind];
   const pal = { ...PIX, P: tintHex(color, 0.35), p: color, d: shadeHex(color, 0.62), H, h, j };
+  if (skin) Object.assign(pal, { s: skin, t: shadeHex(skin, 0.84), c: mixHex(skin, "#e05050", 0.3) });
+  if (eyes) pal.e = eyes;
   const px = (x, y) => c.fillRect((pad + x) * scale, (pad + y) * scale, scale, scale);
   if (halo) {
     c.beginPath();
@@ -959,6 +973,149 @@ function unitCanvas(id) {
     }
   }
   return cv;
+}
+
+// -- your look ---------------------------------------------------------------------------------
+// Your character's colours: tunic (also your land on the map), hair, skin and eyes, each from a few
+// swatches, any colour, or a roll of the dice. Kept in this browser. A colour left unset follows your
+// player colour, your class (hair) or the default palette.
+
+const LOOK_PARTS = {
+  color: ["Tunic", [
+    ["#d94f4f", "Crimson"], ["#e8833a", "Amber"], ["#e8c547", "Saffron"], ["#7cc04f", "Moss"],
+    ["#2f9e7a", "Jade"], ["#3fb8d8", "Sky"], ["#3a6fd8", "Cobalt"], ["#7a5ad8", "Violet"],
+    ["#c95bb8", "Orchid"], ["#8a5a3a", "Umber"], ["#5a6478", "Slate"], ["#e8e2d0", "Bone"],
+  ]],
+  hair: ["Hair", [
+    ["#2a2420", "Black"], ["#523420", "Brown"], ["#8a5a30", "Chestnut"], ["#d05020", "Auburn"],
+    ["#e8b040", "Blond"], ["#efe0b0", "Platinum"], ["#9aa0a8", "Grey"], ["#3a6ad0", "Blue"],
+    ["#b04ab0", "Magenta"], ["#40a060", "Green"],
+  ]],
+  skin: ["Skin", [
+    ["#fde4c4", "Porcelain"], ["#fcd4a4", "Fair"], ["#f0bc88", "Light"], ["#d8a070", "Tan"],
+    ["#b87a50", "Bronze"], ["#8c5a38", "Brown"], ["#6a4028", "Deep"], ["#a8d0a0", "Goblin"],
+  ]],
+  eyes: ["Eyes", [
+    ["#283c78", "Blue"], ["#2a1c20", "Dark"], ["#6a4020", "Hazel"], ["#2f7a4a", "Green"],
+    ["#6a8ac8", "Ice"], ["#8a4ab0", "Violet"], ["#c03030", "Red"], ["#c09020", "Gold"],
+  ]],
+};
+const HEX = /^#[0-9a-f]{6}$/;
+
+function readLook() {
+  try {
+    const v = JSON.parse(store.get("look") || "{}");
+    return Object.fromEntries(Object.keys(LOOK_PARTS).filter((k) => HEX.test(v[k])).map((k) => [k, v[k]]));
+  } catch { return {}; }
+}
+let look = readLook();
+
+// The sprite id for a unit, carrying a look (yours) or none (bots).
+function unitId(cls, color, who, halo = "", dir = "s", lk = {}) {
+  return ["unit", cls, color, who, halo, dir, lk.hair || "", lk.skin || "", lk.eyes || ""].join(":");
+}
+
+function hslHex(h, s, l) {
+  const f = (n) => {
+    const k = (n + h / 30) % 12, a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+    return Math.round(255 * (l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+
+// A new colour for one part: any bright hue for the tunic, mostly natural hair with the odd dyed one,
+// and skin and eyes from their swatches.
+function rollPart(k) {
+  if (k === "color") return hslHex(rnd(0, 360), rnd(50, 75), rnd(42, 58));
+  if (k === "hair") return Math.random() < 0.7 ? pick(LOOK_PARTS.hair[1].slice(0, 7))[0] : hslHex(rnd(0, 360), 60, 50);
+  return pick(LOOK_PARTS[k][1])[0];
+}
+
+let lookDraft = {};
+
+// What a part shows when you haven't picked it.
+function lookDefault(k, st) {
+  const me = st.units.find((u) => u.user_id === st.you);
+  return {
+    color: COLORS[(st.you - 1) % COLORS.length], hair: (HAIR[me.class] || HAIR.barbarian)[1], skin: PIX.s, eyes: PIX.e,
+  }[k];
+}
+
+function renderLook() {
+  const st = lastState;
+  const me = st.units.find((u) => u.user_id === st.you);
+  const value = (k) => lookDraft[k] || lookDefault(k, st);
+  $("look-preview").replaceChildren(...["s", "e", "n", "w"].map((dir) => Object.assign(document.createElement("img"), {
+    src: unitIconUrl(unitId(me.class, value("color"), "you", "", dir, lookDraft)),
+    alt: { s: "front", e: "facing right", n: "back", w: "facing left" }[dir],
+  })));
+  for (const fs of $("look-parts").children) {
+    const k = fs.dataset.part, v = value(k);
+    for (const r of fs.querySelectorAll("input[type=radio]")) r.checked = r.value === v;
+    fs.querySelector("input[type=color]").value = v;
+  }
+}
+
+function openLook() {
+  if (!lastState) return;
+  lookDraft = { ...look };
+  renderLook();
+  $("look").showModal();
+}
+
+function wireLook() {
+  $("look-parts").replaceChildren(...Object.entries(LOOK_PARTS).map(([k, [label, swatches]]) => {
+    const fs = document.createElement("fieldset");
+    fs.className = "look-part";
+    fs.dataset.part = k;
+    const legend = Object.assign(document.createElement("legend"), { textContent: label });
+    const row = document.createElement("div");
+    row.className = "swatches";
+    for (const [hex, name] of swatches) {
+      const r = Object.assign(document.createElement("input"), { type: "radio", name: `look-${k}`, value: hex, title: name });
+      r.setAttribute("aria-label", name);
+      r.style.setProperty("--swatch", hex);
+      row.append(r);
+    }
+    const any = Object.assign(document.createElement("input"), { type: "color", title: "Any colour" });
+    any.setAttribute("aria-label", `Any ${label.toLowerCase()} colour`);
+    const dice = Object.assign(document.createElement("button"), { type: "button", className: "dice", textContent: "🎲" });
+    dice.setAttribute("aria-label", `Roll ${label.toLowerCase()}`);
+    dice.title = `Roll ${label.toLowerCase()}`;
+    row.append(any, dice);
+    fs.append(legend, row);
+    fs.addEventListener("input", (e) => { lookDraft[k] = e.target.value; renderLook(); });
+    dice.onclick = () => { lookDraft[k] = rollPart(k); renderLook(); };
+    return fs;
+  }));
+  $("look-open").onclick = openLook;
+  $("look-roll").onclick = () => {
+    for (const k of Object.keys(LOOK_PARTS)) lookDraft[k] = rollPart(k);
+    renderLook();
+  };
+  $("look-reset").onclick = () => { lookDraft = {}; renderLook(); };
+  const d = $("look");
+  d.addEventListener("close", () => {
+    if (d.returnValue === "save") {
+      look = { ...lookDraft };
+      store.set("look", JSON.stringify(look));
+      if (lastState) { draw(lastState); renderPanel(lastState); updatePlayer(lastState); }
+    }
+    d.returnValue = "";
+  });
+  // Light dismiss where <dialog closedby> is missing (Safari): a press and release both outside the box.
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    const outside = (e) => {
+      const r = d.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    let pressedOutside = false;
+    d.addEventListener("pointerdown", (e) => { pressedOutside = outside(e); });
+    d.addEventListener("pointerup", (e) => { if (pressedOutside && outside(e)) d.close(); });
+  }
 }
 
 // -- health bars -------------------------------------------------------------------------------
@@ -1116,7 +1273,7 @@ function renderPanel(st) {
     li.innerHTML = `<img class="cls" alt=""><span></span><span class="small"></span><span class="who"></span>`;
     li.append(hpBar(u, u.on_map ? null : `respawning in ${u.respawn_in} min`));
     const icon = li.children[0];
-    icon.src = unitIconUrl(`unit:${u.class}:${colorOf(p.id)}:bot`);
+    icon.src = unitIconUrl(unitId(u.class, colorOf(p.id), "bot", "", "s", p.id === st.you ? look : {}));
     icon.alt = u.class;
     icon.title = `${u.class[0].toUpperCase()}${u.class.slice(1)}: ${describe(meta.classes[u.class])}`;
     li.children[1].textContent = p.id === st.you ? `${p.name} (you)` : p.name;
@@ -1662,6 +1819,7 @@ function wirePanel() {
   addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
   addEventListener("pointerdown", (e) => { if (!$("ctx").contains(e.target)) closeMenu(); }, true);
   wireShieldOptions();
+  wireLook();
   wireNemesis();
   $("news").onclick = () => lastState && showReport(Math.max(0, lastState.tick - 360), "The last six hours");
 }
