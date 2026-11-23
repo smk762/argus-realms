@@ -13,6 +13,8 @@ authors = [{ name = "dragonhound" }]
 dependencies = [
     # Base install is pure Python (no GDAL): the server uses it for chunk addressing only.
     "argus-atlas>=0.4.1,<0.5",
+    # argus_cortex.hashing.sha256_hex (scripts/atlas_docs.py).
+    "argus-cortex>=0.14,<0.15",
     "h3>=4.1",
     "psycopg[binary]>=3.2",
     "pydantic>=2.7",
