@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from argus_cortex.hashing import sha256_hex
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -290,7 +291,7 @@ def test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere(at
     (vendor / "secret.md").write_text("# Not vetted\n")
     unvetted = {
         **record,
-        "files": {**record["files"], "docs/secret.md": {"as": "secret.md", "sha256": ad.sha256(b"# Not vetted\n")}},
+        "files": {**record["files"], "docs/secret.md": {"as": "secret.md", "sha256": sha256_hex(b"# Not vetted\n")}},
     }
     (vendor / "sync.json").write_text(json.dumps(unvetted))
     with pytest.raises(ad.DocsError, match="not in DOCS"):
@@ -299,7 +300,7 @@ def test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere(at
     outside = vendor.parent / "outside.md"
     outside.write_text("x")
     moved = json.loads(json.dumps(record))
-    moved["files"]["docs/cli.md"] = {"as": "../outside.md", "sha256": ad.sha256(b"x")}
+    moved["files"]["docs/cli.md"] = {"as": "../outside.md", "sha256": sha256_hex(b"x")}
     (vendor / "sync.json").write_text(json.dumps(moved))
     with pytest.raises(ad.DocsError, match="vendors docs/cli.md as '../outside.md'"):
         ad.load_record(vendor)

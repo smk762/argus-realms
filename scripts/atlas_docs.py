@@ -23,7 +23,6 @@ workflow (``atlas-drift.yml``) flags when ``dev`` moves on.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import html
 import json
 import os
@@ -35,6 +34,8 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+
+from argus_cortex.hashing import sha256_hex
 
 ROOT = Path(__file__).resolve().parent.parent
 VENDOR = ROOT / "docs" / "atlas"
@@ -81,10 +82,6 @@ _denylist_notice_given = False
 
 class DocsError(Exception):
     """The docs can't be imported, don't match their record, or disagree with the bakes."""
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def denylist_terms() -> list[str]:
@@ -189,11 +186,11 @@ def import_docs(repo: Path, ref: str) -> dict:
     (VENDOR / "img").mkdir(parents=True, exist_ok=True)
     for doc, data in texts.items():
         (VENDOR / f"{doc.id}.md").write_bytes(data)
-        files[doc.path] = {"as": f"{doc.id}.md", "sha256": sha256(data)}
+        files[doc.path] = {"as": f"{doc.id}.md", "sha256": sha256_hex(data)}
     for path, data in images.items():
         name = PurePosixPath(path).name
         (VENDOR / "img" / name).write_bytes(data)
-        files[path] = {"as": f"img/{name}", "sha256": sha256(data)}
+        files[path] = {"as": f"img/{name}", "sha256": sha256_hex(data)}
     record = {
         "atlas": {"repo": REPO, "commit": commit, "version": version, "ref": ref},
         "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -229,7 +226,7 @@ def load_record(vendor: Path = VENDOR) -> dict:
         if entry["as"] != expected:
             raise DocsError(f"sync.json vendors {upstream} as {entry['as']!r}, not {expected!r}")
         path = vendor / entry["as"]
-        if not path.is_file() or sha256(path.read_bytes()) != entry["sha256"]:
+        if not path.is_file() or sha256_hex(path.read_bytes()) != entry["sha256"]:
             raise DocsError(f"docs/atlas/{entry['as']} differs from its record: re-import instead of editing it")
         if path.suffix == ".md" and (found := opsec_findings(path.read_text())):
             raise DocsError(f"docs/atlas/{entry['as']} fails the opsec gate: {found}")

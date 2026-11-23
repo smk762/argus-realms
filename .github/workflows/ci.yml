@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "pillow>=10.0" "markdown-it-py>=3.0,<5"
+      - run: pip install "pillow>=10.0" "markdown-it-py>=3.0,<5" "argus-cortex>=0.14,<0.15"
       - run: python scripts/build_static.py --check
 
   # The vendored Dragonhound shared layer (site/vendor/dh/): fails if a copy was edited here, or no longer matches
