@@ -359,23 +359,29 @@ function addLayers() {
     layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13, "text-font": ["Noto Sans Regular"] },
     paint: { "text-color": "#ffffff" },
   });
+  // Sprites shrink as you zoom out, so one never covers the next hex (a tap there must still move you).
+  const spriteSize = ["interpolate", ["linear"], ["zoom"], 7.5, 0.5, 9.5, 1];
+  const below = (em) => ["interpolate", ["linear"], ["zoom"], 9, ["literal", [0, em * 0.875]], 9.5, ["literal", [0, em]]];
   const unitLayout = {
-    "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
+    "icon-image": ["get", "icon"], "icon-size": spriteSize, "icon-allow-overlap": true, "icon-ignore-placement": true,
     // Names only once zoomed in far enough to read them.
     "text-field": ["step", ["zoom"], "", 9, ["get", "label"]],
-    "text-size": 12, "text-offset": [0, 2.1], "text-anchor": "top",
+    "text-size": 12, "text-offset": below(2.6), "text-anchor": "top",
     "text-font": ["Noto Sans Regular"], "text-allow-overlap": true,
   };
   const unitPaint = { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.5 };
   // Health bars sit just under each sprite, as their own layer because a symbol carries one icon.
   const hpLayout = {
-    "icon-image": ["get", "hpIcon"], "icon-offset": [0, 13], "icon-anchor": "top",
+    "icon-image": ["get", "hpIcon"], "icon-size": spriteSize, "icon-offset": [0, 22], "icon-anchor": "top",
     "icon-allow-overlap": true, "icon-ignore-placement": true,
   };
   map.addLayer({ id: "unit-hp", type: "symbol", source: "units", filter: ["!", ["has", "point_count"]], layout: hpLayout });
-  map.addLayer({ id: "you-hp", type: "symbol", source: "you", layout: { ...hpLayout, "icon-offset": [0, 17] } });
+  map.addLayer({ id: "you-hp", type: "symbol", source: "you", layout: { ...hpLayout, "icon-offset": [0, 31] } });
   map.addLayer({ id: "units", type: "symbol", source: "units", filter: ["!", ["has", "point_count"]], layout: unitLayout, paint: unitPaint });
-  map.addLayer({ id: "you", type: "symbol", source: "you", layout: unitLayout, paint: unitPaint });
+  map.addLayer({
+    id: "you", type: "symbol", source: "you", paint: unitPaint,
+    layout: { ...unitLayout, "text-offset": below(3.2) },
+  });
   // The card closes on a click anywhere but a sprite (MapLibre's own closeOnClick would also fire on those).
   map.on("click", (e) => {
     if (popup && !map.queryRenderedFeatures(e.point, { layers: ["units", "you"] }).length) popup.remove();
@@ -497,10 +503,10 @@ function draw(st) {
       geometry: { type: "Point", coordinates: [lng + r * Math.cos(a) * 1.3, lat + r * Math.sin(a)] },
       properties: {
         // A shielded unit sits in a bubble, in its player's shield look.
-        icon: `unit:${u.class}:${colorOf(u.user_id)}:${u.user_id === st.you ? "you" : "bot"}:${u.shield ? looks.get(u.user_id) || meta.shield_looks.plain : ""}`,
+        icon: `unit:${u.class}:${colorOf(u.user_id)}:${u.user_id === st.you ? "you" : "bot"}:${u.shield ? looks.get(u.user_id) || meta.shield_looks.plain : ""}:${faceOf(u)}`,
         you: u.user_id === st.you,
         user_id: u.user_id,
-        hpIcon: ((h) => `hp:${Math.round(h.pct / 5) * 5}:${u.user_id === st.you ? 34 : 28}:${h.colour}`)(health(u)),
+        hpIcon: ((h) => `hp:${Math.round(h.pct / 5) * 5}:${u.user_id === st.you ? 44 : 34}:${h.colour}`)(health(u)),
         label: `${names.get(u.user_id)}${u.kills ? ` ★${u.kills}` : ""}`,
       },
     });
@@ -516,30 +522,359 @@ function draw(st) {
 }
 
 // -- unit sprites ------------------------------------------------------------------------------
-// A token tinted in the player's colour with a white emblem for the unit's class. Yours is a shield
-// with a gold rim; bots are round. Drawn on a canvas on first use, so there are no sprite files.
+// 24×24 chibi characters in a 16-bit style, nearest-neighbour scaled, facing the way they walk: front
+// (south), back (north) and a profile (east; west is mirrored). Each is a head and a prop per class over a
+// shared body. `P`, `p` and `d` are the player's colour and a light and dark shade of it; the rest is a
+// fixed palette, so a class stays readable in every colour. Yours is larger, with a gold outline. Drawn on
+// a canvas on first use, so there are no sprite files.
 
-const EMBLEMS = {
-  barbarian(c) { // axe
-    c.lineWidth = 3; c.beginPath(); c.moveTo(-6, 9); c.lineTo(5, -8); c.stroke();
-    c.beginPath(); c.moveTo(1, -10); c.quadraticCurveTo(12, -9, 9, 2); c.lineTo(3, -4); c.closePath(); c.fill();
+const PIX = {
+  o: "#2a1c20", // outline
+  s: "#fcd4a4", t: "#e0a070", c: "#f4a088", // skin, skin shade, blush
+  e: "#283c78", w: "#ffffff", // eyes, highlight / white cloth
+  W: "#c4ccdc", // white cloth shade
+  m: "#eef2f8", k: "#a8b2c4", K: "#626c80", // metal light, mid, dark
+  l: "#b07040", L: "#6c3c24", // leather / wood
+  g: "#f8d040", G: "#b8801c", // gold
+  r: "#e03838", R: "#982020", // red
+  u: "#f0e4c8", U: "#b8a47c", // horn, fur
+  n: "#38405c", N: "#1e2236", // navy, black cloth
+  f: "#f89028", y: "#fff07a", // flame
+};
+
+// Hair colour per class (H light, h mid, j dark); a = sleeve colour (P/p by default).
+const HAIR = {
+  barbarian: ["#f88848", "#d05020", "#8c3014"],
+  marine: ["#7a5638", "#523420", "#341e12"],
+  medic: ["#fce07c", "#e8b040", "#b07820"],
+  saboteur: ["#5c5c6c", "#3c3c48", "#24242c"],
+  tank: ["#7a5638", "#523420", "#341e12"],
+};
+
+const half = (rows) => rows.map((r) => r + [...r].reverse().join(""));
+
+// Body, rows 12-23. Front and back are symmetric halves; the side faces east (west is mirrored).
+const BODY = {
+  s: half([
+    "......oPPPPP",
+    ".....oaPpppp",
+    "....oaaopppp",
+    "....oaaoPppp",
+    "....ossoLLLg",
+    "....ottopppp",
+    ".....oodpppp",
+    "......odpppp",
+    "......oddddd",
+    "......olLLo.",
+    "......oLLLo.",
+    ".......ooo..",
+  ]),
+  n: half([
+    "......oppppp",
+    ".....oappppp",
+    "....oaaopppp",
+    "....oaaopppd",
+    "....ossoLLLL",
+    "....ottopppp",
+    ".....oodpppp",
+    "......odpppp",
+    "......oddddd",
+    "......olLLo.",
+    "......oLLLo.",
+    ".......ooo..",
+  ]),
+  e: [
+    "........oPPPPPo.........",
+    ".......oPppppppo........",
+    ".......oppaaappo........",
+    ".......oppaaappo........",
+    ".......oLLossoLo........",
+    ".......opponnopo........",
+    ".......odppooppo........",
+    ".......odpppppdo........",
+    ".......oddddddo.........",
+    "........olLoLLo.........",
+    "........oLLoLLLo........",
+    ".........oo.ooo.........",
+  ],
+};
+
+// Heads, rows 0-11.
+const HEAD = {
+  barbarian: {
+    s: half([
+      "..oo........",
+      ".ouo........",
+      ".ouUo...oooo",
+      ".oUUo.oommmm",
+      "..oUUommmmmm",
+      "...ooKkkkkkk",
+      "...oHKKKKKKK",
+      "..ohHhssssss",
+      "..ohhseessss",
+      "..ohhsweesss",
+      "...ohjsccsss",
+      "....ojjjjjjj",
+    ]),
+    n: half([
+      "..oo........",
+      ".ouo........",
+      ".ouUo...oooo",
+      ".oUUo.oommmm",
+      "..oUUommmmmm",
+      "...ooKkkkkkk",
+      "...ohKKKKKKK",
+      "..ohHhhhhhhh",
+      "..ohhHhhhhhh",
+      "..ohhhhhhhhh",
+      "...ohjhhjhhh",
+      "....ojojjjoj",
+    ]),
+    e: [
+      "..............oo........",
+      ".............ouo........",
+      "........ooooouUo........",
+      "......oommmmouUo........",
+      ".....ommmmmmoUUo........",
+      "....oHkkkkkkkoo.........",
+      "...ohHKKKKKKKKo.........",
+      "...ohHhhhsssssso........",
+      "..ohhhhhssseesso........",
+      "..ohhjhhssswesso........",
+      "...ohhhjjscssjjo........",
+      "....ooojjjjjjjo.........",
+    ],
   },
-  marine(c) { // anchor
-    c.lineWidth = 2.5; c.beginPath(); c.moveTo(0, -6); c.lineTo(0, 9); c.moveTo(-5, -3); c.lineTo(5, -3); c.stroke();
-    c.beginPath(); c.arc(0, -8.5, 2.5, 0, 2 * Math.PI); c.stroke();
-    c.beginPath(); c.arc(0, 2, 8, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
+  marine: {
+    s: half([
+      "............",
+      "......oooooo",
+      "....oonnnnnn",
+      "...onnnnnnng",
+      "..onnnnnnngg",
+      "..oGGGGGGGGG",
+      "...ohhhhhhhh",
+      "...ohhHhshhs",
+      "...ohsseesss",
+      "...ohsweesss",
+      "....oscsssss",
+      ".....oosssss",
+    ]),
+    n: half([
+      "............",
+      "......oooooo",
+      "....oonnnnnn",
+      "...onnnnnnnn",
+      "..onnnnnnnnn",
+      "..oGGGGGGGGG",
+      "...ohhhhhhhh",
+      "...ohhHhhhhh",
+      "...ohhhhhhhh",
+      "...ohhhhhhhh",
+      "....ojhhjhhh",
+      ".....oojjjjj",
+    ]),
+    e: [
+      "........................",
+      "........oooooooo........",
+      "......oonnnnnnnnoo......",
+      ".....onnnnnnnggnnno.....",
+      "....onnnnnnngggnnnno....",
+      "...oGGGGGGGGGGGGGGGGo...",
+      "....ohhhhhhhhhhhhho.....",
+      "...ohhHhhhhhsssssso.....",
+      "...ohhhhhhssseesso......",
+      "...ohhhhhhsssweesso.....",
+      "....ohhhhhsscsssso......",
+      ".....ooojjooossoo.......",
+    ],
   },
-  medic(c) { // cross
-    c.fillRect(-2.5, -9, 5, 18); c.fillRect(-9, -2.5, 18, 5);
+  medic: {
+    s: half([
+      "............",
+      "........oooo",
+      "......oowwww",
+      ".....owwwwrr",
+      "....owwwwwrr",
+      "....oWwwwrrr",
+      "...ohWWWWWWW",
+      "...ohHhhhhhs",
+      "...ohsseesss",
+      "...ohsweesss",
+      "....oscsssss",
+      ".....oosssss",
+    ]),
+    n: half([
+      "............",
+      "........oooo",
+      "......oowwww",
+      ".....owwwwww",
+      "....owwwwwww",
+      "....oWwwwwww",
+      "...ohWWWWWWW",
+      "...ohHhhhhhh",
+      "...ohhHhhhhh",
+      "...ohhhhhhhh",
+      "....ojhhjhhh",
+      ".....oojjjjj",
+    ]),
+    e: [
+      "........................",
+      ".........oooooo.........",
+      ".......oowwwwwwoo.......",
+      "......owwwwwrwwwwo......",
+      ".....owwwwwrrrwwwwo.....",
+      ".....oWwwwwwrwwwwwo.....",
+      "....ohWWWWWWWWWWWWo.....",
+      "...ohhHhhhhsHhssso......",
+      "...ohhhhhhssseesso......",
+      "...ohhhhhhsssweesso.....",
+      "....ohhhhhsscsssso......",
+      ".....ooojjooossoo.......",
+    ],
   },
-  saboteur(c) { // dagger
-    c.beginPath(); c.moveTo(0, -11); c.lineTo(3, 2); c.lineTo(-3, 2); c.closePath(); c.fill();
-    c.fillRect(-6, 2, 12, 2.5); c.fillRect(-1.5, 4.5, 3, 6);
+  saboteur: {
+    s: half([
+      "............",
+      "........oooo",
+      "......oodddd",
+      ".....oddpppp",
+      "....odpppppp",
+      "...odppppppp",
+      "...odpoooooo",
+      "...odotttttt",
+      "...odosseess",
+      "...odosweess",
+      "...odoNNNNNN",
+      "....odNNNNNN",
+    ]),
+    n: half([
+      "............",
+      "........oooo",
+      "......oodddd",
+      ".....oddpppp",
+      "....odpppppp",
+      "...odppppppp",
+      "...odppppppp",
+      "...odppppppp",
+      "...odppppppp",
+      "...odppppppp",
+      "...oddpppppp",
+      "....odddpppp",
+    ]),
+    e: [
+      "........................",
+      "..........oooooo........",
+      "........oodddpppoo......",
+      ".......odppppppppPo.....",
+      "......odppppppppppPo....",
+      ".....odpppppppppoooPo...",
+      ".....odppppppppottttPo..",
+      ".....odpppPpppposseeso..",
+      ".....odppPPpppposwesso..",
+      ".....odpppPpppoNNNNNNo..",
+      "......oddpppppoNNNNNo...",
+      ".......ooddddddoooooo...",
+    ],
   },
-  tank(c) { // hull, turret, barrel
-    c.fillRect(-9, 1, 18, 6); c.fillRect(-5, -4, 9, 6); c.fillRect(3, -2.5, 8, 2.5);
+  tank: {
+    s: half([
+      "...........P",
+      ".........oPp",
+      "......oooodp",
+      ".....ommmmod",
+      "....ommmmmmo",
+      "...ommmkkkkk",
+      "...omkkkkkkk",
+      "...omkoooooo",
+      "...omkoNNNNN",
+      "...omkkooooo",
+      "...oKkkkkkkk",
+      "....oKKKKKKK",
+    ]),
+    n: half([
+      "...........P",
+      ".........oPp",
+      "......oooodp",
+      ".....ommmmod",
+      "....ommmmmmo",
+      "...ommmkkkkk",
+      "...omkkkkkkk",
+      "...omkkkkkkk",
+      "...omkkkkkkk",
+      "...omkkkkkkk",
+      "...oKkkkkkkk",
+      "....oKKKKKKK",
+    ]),
+    e: [
+      "...PPp..................",
+      "..oPppPo................",
+      "..oppdppoooooo..........",
+      "...oddoommmmmmoo........",
+      "......ommmmmmmmmo.......",
+      ".....ommmmmmmmkkko......",
+      ".....omkkkkkkkkkkko.....",
+      ".....omkkkkkkooooooo....",
+      ".....omkkkkkkoNNNNNo....",
+      ".....omkkkkkkkoooooo....",
+      ".....oKkkkkkkkkkkko.....",
+      "......oKKKKKKKKKKo......",
+    ],
   },
 };
+
+// Props: [x, y, rows], drawn over the body; `under` ones go first (behind).
+const GEAR = {
+  barbarian: {
+    s: { over: [[0, 11, [".....oo.", ".oooolo.", "ommmmlo.", "omkKmlo.", "oKkmolo.", ".ooo....", "........", ".....lo.", ".....oo."]]],
+      arms: "s" },
+    n: { under: [[17, 9, ["..ooo...", ".ommmo..", ".omkKmmo", ".omKkmmo", "..ollKo.", "...olo..", "...olo..", "...oo..."]]],
+      arms: "s" },
+    e: { over: [[12, 11, [".oo.....", ".olooo..", ".olmmmo.", ".olkKmmo", ".olKkmmo", ".olooo..", ".olo....", ".olo....", "..o....."]]],
+      arms: "s" },
+  },
+  marine: {
+    s: { over: [[1, 4, ["o.o.o", "ogogo", "ogggo", ".ogo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", "..o.."]]] },
+    n: { under: [[18, 4, ["o.o.o", "ogogo", "ogggo", ".ogo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", "..o.."]]] },
+    e: { under: [[16, 4, ["o.o.o", "ogogo", "ogggo", ".ogo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", ".olo.", "..o.."]]] },
+  },
+  medic: {
+    s: { over: [[0, 13, [".oooooo.", "owwwwwwo", "owwrrwwo", "owrrrrwo", "owwrrwwo", "oWWWWWWo", ".oooooo."]]] },
+    n: { under: [[16, 13, [".oooooo.", "owwwwwwo", "owwwwwwo", "owwwwwwo", "oWWWWWWo", ".oooooo."]]] },
+    e: { over: [[4, 14, [".oooooo.", "owwrrwwo", "owrrrrwo", "owwrrwwo", "oWWWWWWo", ".oooooo."]]] },
+  },
+  saboteur: {
+    s: { over: [[0, 10, ["....yo.", "...fo..", "..oGo..", ".oNNNo.", "oNNnNNo", "oNnNNNo", "oNNNNNo", ".oNNNo.", "..ooo.."]]] },
+    n: { under: [[17, 10, ["....yo.", "...fo..", "..oGo..", ".oNNNo.", "oNNNnNo", "oNNNNNo", "oNNNNNo", ".oNNNo.", "..ooo.."]]] },
+    e: { over: [[14, 10, [".yo....", "..fo...", "..oGo..", ".oNNNo.", "oNnNNNo", "onNNNNo", "oNNNNNo", ".oNNNo.", "..ooo.."]]] },
+  },
+  tank: {
+    s: { over: [[0, 12, [".oooooo.", "oKkkkkko", "okppppko", "okpggpko", "okpggpko", "okppppko", ".okddko.", "..okko..", "...oo..."]]], arms: "k" },
+    n: { under: [[16, 12, [".oooooo.", "oKkkkkko", "okKKKKko", "okKKKKko", "okKKKKko", "okKKKKko", ".okKKko.", "..okko..", "...oo..."]]], arms: "k" },
+    e: { over: [[12, 12, ["oooo....", "okkko...", "okppko..", "okggpo..", "okggpo..", "okppko..", "okddo...", "okko....", "ooo....."]]], arms: "k" },
+  },
+};
+
+const DIRS = { n: "n", s: "s", e: "e", w: "e" };
+
+// The 24x24 character grid for a class facing a direction ("w" is "e" mirrored by the caller).
+function spriteGrid(cls, dir) {
+  const d = DIRS[dir];
+  const grid = [...HEAD[cls][d], ...BODY[d]].map((r) => [...r]);
+  const gear = GEAR[cls][d];
+  const arm = gear.arms || "p";
+  const stamp = ([x0, y0, rows], under) => rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch === ".") return;
+    const at = grid[y0 + y];
+    if (!at || x0 + x > 23) return;
+    if (under && at[x0 + x] !== ".") return;
+    at[x0 + x] = ch;
+  }));
+  (gear.under || []).forEach((p) => stamp(p, true));
+  (gear.over || []).forEach((p) => stamp(p, false));
+  if (arm) grid.forEach((r) => r.forEach((ch, x) => { if (ch === "a") r[x] = arm; }));
+  return grid;
+}
 
 function unitIcon(id) {
   const cv = unitCanvas(id);
@@ -553,31 +888,76 @@ function unitIconUrl(id) {
   return iconUrls.get(id);
 }
 
+function shadeHex(hex, factor) { // towards black
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (c) => Math.max(0, Math.min(255, Math.round(c * factor)));
+  return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
+}
+
+function tintHex(hex, factor) { // towards white
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (c) => Math.round(c + (255 - c) * factor);
+  return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
+}
+
+// Which way a unit faces: towards its next hex while it moves, else the way it last went (front at first).
+const facing = new Map();
+function faceOf(u) {
+  const from = centreOf(u.hex), to = u.path.length ? centreOf(u.path[0]) : null;
+  if (from && to) {
+    const dx = (to[0] - from[0]) * Math.cos((from[1] * Math.PI) / 180), dy = to[1] - from[1];
+    facing.set(u.id, Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : dy > 0 ? "n" : "s");
+  }
+  return facing.get(u.id) || "s";
+}
+
+// "unit:<class>:<colour>:<you|bot>:<shield look or empty>:<n|e|s|w>"
 function unitCanvas(id) {
-  const [, cls, color, who, halo] = id.split(":");
-  const you = who === "you", token = you ? 40 : 32, r = token / 2 - 2, size = halo ? token + 12 : token;
+  const [, cls, color, who, halo, dir = "s"] = id.split(":");
+  const you = who === "you";
+  // Device pixels per sprite pixel. Registered at pixelRatio 2, so a bot is 48px and you are 60px.
+  const scale = you ? 5 : 4;
+  const kind = HEAD[cls] ? cls : "barbarian";
+  let grid = spriteGrid(kind, dir);
+  if (dir === "w") grid = grid.map((r) => [...r].reverse());
+  const rim = you ? 1 : 0;
+  const pad = rim + (halo ? 2 : 0);
+  const size = (24 + pad * 2) * scale;
   const cv = document.createElement("canvas");
-  cv.width = cv.height = size * 2;
+  cv.width = cv.height = size;
   const c = cv.getContext("2d");
-  c.scale(2, 2);
-  c.translate(size / 2, size / 2);
+  c.imageSmoothingEnabled = false;
+  const [H, h, j] = HAIR[kind];
+  const pal = { ...PIX, P: tintHex(color, 0.35), p: color, d: shadeHex(color, 0.62), H, h, j };
+  const px = (x, y) => c.fillRect((pad + x) * scale, (pad + y) * scale, scale, scale);
   if (halo) {
-    c.beginPath(); c.arc(0, 0, size / 2 - 1.5, 0, 2 * Math.PI);
+    c.beginPath();
+    c.arc(size / 2, size / 2, (12 + rim + 1) * scale, 0, 2 * Math.PI);
     c.fillStyle = `${halo}40`; c.fill();
-    c.lineWidth = 2.5; c.strokeStyle = halo; c.stroke();
+    c.lineWidth = 4; c.strokeStyle = halo; c.stroke();
   }
+  // A soft shadow under the feet.
+  c.fillStyle = "rgba(20, 22, 26, 0.35)";
   c.beginPath();
-  if (you) { // shield
-    c.moveTo(-r, -r * 0.85); c.lineTo(r, -r * 0.85); c.lineTo(r, 0);
-    c.quadraticCurveTo(r * 0.9, r * 0.8, 0, r); c.quadraticCurveTo(-r * 0.9, r * 0.8, -r, 0); c.closePath();
-  } else {
-    c.arc(0, 0, r, 0, 2 * Math.PI);
+  c.ellipse((pad + 12) * scale, (pad + 22.5) * scale, 6.5 * scale, 1.6 * scale, 0, 0, 2 * Math.PI);
+  c.fill();
+  const solid = (x, y) => x >= 0 && y >= 0 && x < 24 && y < 24 && grid[y][x] !== ".";
+  // Gold on the pixels just outside the silhouette, so holes stay open.
+  if (you) {
+    c.fillStyle = "#e0a84f";
+    for (let y = -1; y <= 24; y++) {
+      for (let x = -1; x <= 24; x++) {
+        if (!solid(x, y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => solid(x + dx, y + dy))) px(x, y);
+      }
+    }
   }
-  c.fillStyle = color; c.fill();
-  c.lineWidth = you ? 3 : 2; c.strokeStyle = you ? "#e0a84f" : "#14161a"; c.stroke();
-  c.fillStyle = c.strokeStyle = "#ffffff"; c.lineCap = "round";
-  if (you) c.scale(1.15, 1.15);
-  (EMBLEMS[cls] || EMBLEMS.barbarian)(c);
+  for (let y = 0; y < 24; y++) {
+    for (let x = 0; x < 24; x++) {
+      if (!solid(x, y)) continue;
+      c.fillStyle = pal[grid[y][x]];
+      px(x, y);
+    }
+  }
   return cv;
 }
 
