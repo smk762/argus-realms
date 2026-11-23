@@ -144,17 +144,20 @@ function addLayers() {
     layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13, "text-font": ["Noto Sans Regular"] },
     paint: { "text-color": "#ffffff" },
   });
+  // Sprites shrink as you zoom out, so one never covers the next hex (a tap there must still move you).
+  const spriteSize = ["interpolate", ["linear"], ["zoom"], 7.5, 0.5, 9.5, 1];
+  const below = (em) => ["interpolate", ["linear"], ["zoom"], 9, ["literal", [0, em * 0.875]], 9.5, ["literal", [0, em]]];
   const unitLayout = {
-    "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
+    "icon-image": ["get", "icon"], "icon-size": spriteSize, "icon-allow-overlap": true, "icon-ignore-placement": true,
     // Names only once zoomed in far enough to read them.
     "text-field": ["step", ["zoom"], "", 9, ["get", "label"]],
-    "text-size": 12, "text-offset": [0, 2.6], "text-anchor": "top",
+    "text-size": 12, "text-offset": below(2.6), "text-anchor": "top",
     "text-font": ["Noto Sans Regular"], "text-allow-overlap": true,
   };
   const unitPaint = { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.5 };
   // Health bars sit just under each sprite, as their own layer because a symbol carries one icon.
   const hpLayout = {
-    "icon-image": ["get", "hpIcon"], "icon-offset": [0, 22], "icon-anchor": "top",
+    "icon-image": ["get", "hpIcon"], "icon-size": spriteSize, "icon-offset": [0, 22], "icon-anchor": "top",
     "icon-allow-overlap": true, "icon-ignore-placement": true,
   };
   map.addLayer({ id: "unit-hp", type: "symbol", source: "units", filter: ["!", ["has", "point_count"]], layout: hpLayout });
@@ -162,7 +165,7 @@ function addLayers() {
   map.addLayer({ id: "units", type: "symbol", source: "units", filter: ["!", ["has", "point_count"]], layout: unitLayout, paint: unitPaint });
   map.addLayer({
     id: "you", type: "symbol", source: "you", paint: unitPaint,
-    layout: { ...unitLayout, "text-offset": [0, 3.2] },
+    layout: { ...unitLayout, "text-offset": below(3.2) },
   });
   // The card closes on a click anywhere but a sprite (MapLibre's own closeOnClick would also fire on those).
   map.on("click", (e) => {
