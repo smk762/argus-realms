@@ -105,6 +105,17 @@ def test_export_refuses_tiles_that_disagree(tmp_path):
         export(maps, tmp_path / "tiles")
 
 
+def test_export_replaces_a_tile_left_by_an_earlier_export(tmp_path):
+    maps, out = tmp_path / "maps", tmp_path / "tiles"
+    write_chunk(maps, "antique", WELLINGTON)
+    export(maps, out)
+    stale = out / "antique/10/1009/641.png"
+    fresh = stale.read_bytes()
+    stale.write_bytes(b"stale")
+    export(maps, out)
+    assert stale.read_bytes() == fresh
+
+
 def test_plan_hexes_fog_land_and_spawns():
     land = land_cells(NZ, 5)
     ready = {(10, x, y) for x in range(1007, 1012) for y in range(639, 644)}

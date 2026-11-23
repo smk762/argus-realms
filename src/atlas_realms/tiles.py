@@ -4,8 +4,9 @@
 
 Reads `<maps>/<style>/<job>/fantasy.pmtiles` (one archive per chunk, as argus-atlas writes them) and
 writes `<out>/<style>/<z>/<x>/<y>.png` plus `<out>/manifest.json`. A new chunk is only new files,
-so the output can sit behind a CDN as is. argus-atlas cuts neighbouring archives without overlap;
-a tile that two archives disagree on is an error. Place names (`labels.geojson`, written by
+so the output can sit behind a CDN as is; a tile already exported is rewritten when a re-bake changed
+it. argus-atlas cuts neighbouring archives without overlap; a tile that two archives in this run
+disagree on is an error. Place names (`labels.geojson`, written by
 `argus-atlas labels --job` for one style's chunks) are merged into `<out>/labels.geojson`.
 
 Each style's manifest entry also says how it was painted (`bake`: recipe, preset, checkpoint, denoise, seeds, the
@@ -94,6 +95,9 @@ def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
     zooms: set[int] = set()
     bounds = [180.0, 90.0, -180.0, -90.0]
     jobs: list[dict] = []
+    # Tiles this run has already written. A file left by an earlier export is replaced; a second
+    # archive in this run that paints the same tile differently is the seam error.
+    written: set[tuple[int, int, int]] = set()
     for archive in sorted(style_dir.glob("*/fantasy.pmtiles")):
         job = _sidecar(archive.parent)
         chunk = _chunk_of(job)
@@ -105,12 +109,14 @@ def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
             h = Reader(source).header()
             for (z, x, y), data in all_tiles(source):
                 dst = out / style_dir.name / str(z) / str(x) / f"{y}.png"
-                if dst.exists() and dst.read_bytes() != data:
+                if (z, x, y) in written and dst.read_bytes() != data:
                     raise ValueError(
                         f"{style_dir.name} {z}/{x}/{y}: {archive.parent.name} disagrees with an earlier chunk"
                     )
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_bytes(data)
+                if not dst.exists() or dst.read_bytes() != data:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(data)
+                written.add((z, x, y))
                 zooms.add(z)
         bounds = [
             min(bounds[0], h["min_lon_e7"] / 1e7),

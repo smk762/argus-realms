@@ -55,7 +55,7 @@ tick:  ## Run one game tick against $$ATLAS_REALMS_DSN (LOOP=1 to keep ticking)
 MAPS ?= var/maps
 
 tiles:  ## Export every area's chunks ($$MAPS/areas/<area>/<style>/<job>) to var/tiles-areas/<area>: Atlas and the arena
-	$(foreach a,$(AREAS),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5) &&) true
+	$(foreach a,$(AREAS),$(if $(wildcard $(MAPS)/areas/$(a)),$(UV) run --no-sync python -m atlas_realms.tiles $(MAPS)/areas/$(a) var/tiles-areas/$(a) --overview-min $(or $(OVERVIEW_MIN_$(a)),5),echo "tiles: no bake in $(MAPS)/areas/$(a), keeping var/tiles-areas/$(a)") &&) true
 
 # Atlas's published areas: the baked ones. bonifacio, seto, salish and cape have plans (bakes/<id>.sh) and AREA_INFO in
 # scripts/build_static.py; add each here once baked. The arena's regions (arena/regions.json) paint from the same exports.
