@@ -4,7 +4,7 @@
 
 For every pair (parent zoom p, child zoom p+k) the child's tiles over the parent's footprint are stitched,
 box-downsampled by 2**k to the parent's resolution and compared with the parent mosaic, on pixels both
-paint (alpha > 0): SSIM on luminance (Gaussian window, sigma 1.5) and a colour-histogram distance
+paint fully (opaque): SSIM on luminance (Gaussian window, sigma 1.5) and a colour-histogram distance
 (Hellinger over a joint 8x8x8 RGB histogram; 0 = identical, 1 = disjoint). Needs numpy and Pillow.
 """
 
@@ -75,7 +75,7 @@ def compare(style: Path, p: int, c: int) -> dict | None:
     parent = mosaic(style, p, x0, y0, nx, ny)
     child = mosaic(style, c, x0 * f, y0 * f, nx * f, ny * f)
     child = child.reshape(ny * TILE, f, nx * TILE, f, 4).mean(axis=(1, 3))  # box filter
-    mask = (parent[..., 3] > 0) & (child[..., 3] > 254)
+    mask = (parent[..., 3] > 254) & (child[..., 3] > 254)
     if not mask.any():
         return None
     score = ssim(lum(parent), lum(child), mask)

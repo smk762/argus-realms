@@ -374,6 +374,26 @@ def test_entering_an_empty_enemy_city_fights_its_garrison_first():
         assert g == b.result.defender_hp_after and out.world.units[1].hex != RING1[0]
 
 
+def test_beating_the_defending_unit_leaves_the_garrison_to_fight():
+    for i in range(50):
+        w = make_world(spawn=h3.grid_ring(CENTRE, 3)[0])
+        a = add_player(w, 1, CENTRE)
+        add_player(w, 2, RING1[0], hp=10)
+        city = w.hexes[RING1[0]]
+        city.owner_id, city.owner_since_tick, city.garrison_hp = 2, 0, 50
+        a.path, a.progress = [RING1[0]], hex_minutes()
+        out = run_tick(w, [], i.to_bytes(4, "big"))
+        if out.battles[0].result.outcome is Outcome.ATTACKER_WON:
+            break
+    else:
+        raise AssertionError("the attacker never won")
+    u = out.world.units[1]
+    assert u.hex == CENTRE and u.path == [RING1[0]]  # outside, still ordered in
+    assert out.world.hexes[RING1[0]].garrison_hp == 50
+    out = step(out.world, n=TICKS_PER_HEX)
+    assert [b.defender_unit for b in out.battles] == [None]  # the next entry is the siege
+
+
 def test_capture_waits_for_the_garrison_and_leaves_it_in_ruins():
     w = make_world()
     add_player(w, 1, RING1[0])  # already standing in the enemy city

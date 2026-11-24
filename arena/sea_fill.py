@@ -15,7 +15,8 @@ blue. This module paints them in as ordinary tiles, so they render exactly like 
 6. With a coast mask (Atlas's sea mask, `data/masks/<area>.png`), fade the painted sea into the fill a few km off the
    coast. For styles whose painted sea step 1 can't match by colour (cyberpunk's rain and circuit lines), the painted
    chunks' open sea otherwise shows as rectangles against the fill.
-7. Write every tile of the block, at every zoom, from the canvas; the coarser zooms are downsampled from it.
+7. Write the painted and open-sea chunks, at every zoom, from the canvas; the coarser zooms are downsampled from it.
+   Any other chunk of the block (land not baked yet) keeps what was exported.
 
 Pillow only. `fill()` writes a complete tile tree for `tiles_webp.export`.
 """
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 
-VERSION = "8"  # part of the build cache key: bump when the output changes
+VERSION = "9"  # part of the build cache key: bump when the output changes
 TILE = 256
 SEA_DISTANCE = 42  # RGB distance from the style's sea colour within which a painted pixel counts as sea
 GRAIN_BLUR = 6  # px: what counts as grain (finer than this) in the painted sea
@@ -296,6 +297,9 @@ def fill(
 ) -> dict:
     """Write tiles/<style> plus the synthesised sea into out/<style>; with `coast` (a sea mask PNG), painted sea fades
     into the fill offshore. Returns counts for the build log."""
+    src, dest = (tiles / style).resolve(), (out / style).resolve()
+    if src == dest or src in dest.parents or dest in src.parents:  # dest is deleted before src is copied
+        raise ValueError(f"{dest} overlaps the source tiles in {src}")
     z = manifest["maxzoom"]
     cz = manifest["chunk_zoom"]
     k = 2 ** (z - cz)
@@ -329,30 +333,37 @@ def fill(
         full = Image.composite(full, synth.convert("RGBA"), keep)
 
     # Copy the exported tree, then add or replace tiles inside the block.
-    dest = out / style
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(tiles / style, dest)
+    shutil.copytree(src, dest)
+    cover = Image.new("L", full.size, 0)  # the chunks the canvas speaks for
+    draw = ImageDraw.Draw(cover)
+    for _, x, y in chunks:
+        X, Y = (x - cx0) * size, (y - cy0) * size
+        draw.rectangle((X, Y, X + size - 1, Y + size - 1), fill=255)
     written = 0
     for zoom in range(manifest["minzoom"], z + 1):
         f = 2 ** (z - zoom)
         level = (
-            full
+            full.copy()
             if f == 1
             else full.resize((max(1, full.width // f), max(1, full.height // f)), Image.Resampling.LANCZOS)
         )
+        level.putalpha(cover if f == 1 else cover.resize(level.size, Image.Resampling.BOX))
         ox, oy = x0 * TILE // f, y0 * TILE // f  # the block's top-left in this zoom's pixel space
         for tx in range(ox // TILE, (ox + level.width - 1) // TILE + 1):
             for ty in range(oy // TILE, (oy + level.height - 1) // TILE + 1):
                 p = dest / str(zoom) / str(tx) / f"{ty}.png"
-                # Inside the block the tile comes from the canvas (levelled seams, filled sea); outside it, a coarse
-                # tile keeps what was exported.
-                tile = Image.open(p).convert("RGBA") if p.exists() else Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
                 left, top = tx * TILE - ox, ty * TILE - oy
                 piece = level.crop(
                     (max(0, left), max(0, top), min(level.width, left + TILE), min(level.height, top + TILE))
                 )
-                tile.paste(piece, (max(0, -left), max(0, -top)))
+                # Covered chunks come from the canvas (levelled seams, filled sea); elsewhere a tile keeps what was
+                # exported.
+                if piece.getchannel("A").getbbox() is None:
+                    continue
+                tile = Image.open(p).convert("RGBA") if p.exists() else Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
+                tile.alpha_composite(piece, (max(0, -left), max(0, -top)))
                 p.parent.mkdir(parents=True, exist_ok=True)
                 tile.save(p, "PNG")
                 written += 1
