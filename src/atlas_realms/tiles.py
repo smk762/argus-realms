@@ -5,7 +5,7 @@
 Reads `<maps>/<style>/<job>/fantasy.pmtiles` (one archive per chunk, as argus-atlas writes them) and
 writes `<out>/<style>/<z>/<x>/<y>.png` plus `<out>/manifest.json`. A new chunk is only new files,
 so the output can sit behind a CDN as is; a tile already exported is rewritten when a re-bake changed
-it. argus-atlas cuts neighbouring archives without overlap; a tile that two archives in this run
+it, and one the bake no longer has is removed. argus-atlas cuts neighbouring archives without overlap; a tile that two archives in this run
 disagree on is an error. Place names (`labels.geojson`, written by
 `argus-atlas labels --job` for one style's chunks) are merged into `<out>/labels.geojson`.
 
@@ -89,6 +89,18 @@ def bake_summary(jobs: list[dict]) -> dict:
     }
 
 
+def _prune(style_out: Path, keep: set[Tile]) -> None:
+    """Remove the z/x/y tiles an earlier export left that aren't in `keep`, old overviews included (they are rebuilt)."""
+    for p in style_out.glob("*/*/*.png"):
+        parts = (p.parent.parent.name, p.parent.name, p.stem)
+        if not all(v.isdecimal() for v in parts) or tuple(map(int, parts)) in keep:
+            continue
+        p.unlink()
+        for d in (p.parent, p.parent.parent):
+            if not any(d.iterdir()):
+                d.rmdir()
+
+
 def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
     """Write one style's tiles. Returns the chunks exported and the zoom range, bounds and bake summary seen."""
     chunks: set[Tile] = set()
@@ -125,6 +137,8 @@ def export_style(style_dir: Path, out: Path) -> tuple[set[Tile], dict]:
             max(bounds[3], h["max_lat_e7"] / 1e7),
         ]
         chunks.add(chunk)
+    if chunks:  # a style dir with no bake leaves the earlier export alone
+        _prune(out / style_dir.name, written)
     meta = {"minzoom": min(zooms, default=0), "maxzoom": max(zooms, default=0), "bounds": bounds}
     return chunks, {**meta, "bake": bake_summary(jobs)}
 

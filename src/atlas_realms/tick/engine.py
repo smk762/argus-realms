@@ -696,7 +696,8 @@ class _Tick:
             d.battles_since_class += 1
             if r.outcome is Outcome.ATTACKER_WON:
                 self.kill(att, d)
-                if not self.enemies_on(cell, att.user_id):
+                # With another defender or a garrison left it stays outside, its route kept: the next entry fights that.
+                if not self.enemies_on(cell, att.user_id) and not self.garrisoned(cell, att.user_id):
                     self.place(att, cell)
                     att.path.pop(0)
                 att.progress = 0.0

@@ -116,6 +116,26 @@ def test_export_replaces_a_tile_left_by_an_earlier_export(tmp_path):
     assert stale.read_bytes() == fresh
 
 
+def test_export_removes_tiles_the_bake_no_longer_has(tmp_path):
+    import shutil
+
+    maps, out = tmp_path / "maps", tmp_path / "tiles"
+    write_chunk(maps, "antique", WELLINGTON)
+    write_chunk(maps, "antique", (10, 1012, 641))
+    export(maps, out)
+    (out / "antique" / "legend.png").write_bytes(b"not a tile")
+    shutil.rmtree(maps / "antique" / "antique-10-1012-641")
+    export(maps, out, overview_min=9)
+    fresh = tmp_path / "fresh"
+    export(maps, fresh, overview_min=9)
+    listing = lambda root: sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))  # noqa: E731
+    assert listing(out / "antique") == sorted([*listing(fresh / "antique"), "legend.png"])
+    # A maps dir with no bake in it is not a reason to delete an export.
+    shutil.rmtree(maps / "antique" / "antique-10-1009-641")
+    export(maps, out, overview_min=9)
+    assert (out / "antique/10/1009/641.png").exists()
+
+
 def test_plan_hexes_fog_land_and_spawns():
     land = land_cells(NZ, 5)
     ready = {(10, x, y) for x in range(1007, 1012) for y in range(639, 644)}

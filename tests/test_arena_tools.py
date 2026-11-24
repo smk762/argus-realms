@@ -179,3 +179,71 @@ def test_levelling_keeps_the_painted_alpha():
     mask = PIL.new("L", (64, 64), 0)
     out = sea_fill._level_painted_seams(canvas, mask, set(), (0, 0), 64)
     assert out.getchannel("A").getextrema() == (128, 128)
+
+
+def _sea_export(root: Path):
+    """z0 chunks on a z1 grid: painted at (0, 0), sea at (1, 1), land not baked at (1, 0); (0, 1) baked in this style
+    only, so not ready."""
+    style = root / "antique"
+    for x, y, colour in ((0, 0, (20, 60, 120)), (0, 1, (200, 10, 10))):
+        p = style / "1" / str(x) / f"{y}.png"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        PIL.new("RGB", (256, 256), colour).save(p)
+    overview = PIL.new("RGBA", (256, 256), (0, 0, 0, 0))
+    overview.paste((200, 10, 10, 255), (0, 128, 128, 256))
+    (style / "0" / "0").mkdir(parents=True)
+    overview.save(style / "0" / "0" / "0.png")
+    return {"minzoom": 0, "maxzoom": 1, "chunk_zoom": 1, "ready_chunks": [[1, 0, 0]]}
+
+
+def test_sea_fill_leaves_chunks_that_are_neither_ready_nor_sea_alone(tmp_path):
+    import sea_fill
+
+    manifest = _sea_export(tmp_path / "tiles")
+    r = sea_fill.fill(tmp_path / "tiles", "antique", manifest, {(1, 1, 1)}, "#143c78", tmp_path / "out")
+    z1, src = tmp_path / "out" / "antique" / "1", tmp_path / "tiles" / "antique" / "1"
+    assert not (z1 / "1" / "0.png").exists()  # unbaked land: no fake sea
+    assert (z1 / "0" / "1.png").read_bytes() == (src / "0" / "1.png").read_bytes()
+    assert PIL.open(z1 / "1" / "1.png").convert("RGBA").getchannel("A").getextrema() == (255, 255)
+    top = PIL.open(tmp_path / "out" / "antique" / "0" / "0" / "0.png").convert("RGBA")
+    assert top.getpixel((64, 192)) == (200, 10, 10, 255)  # as exported
+    assert top.getpixel((192, 64))[3] == 0
+    assert top.getpixel((64, 64))[3] == top.getpixel((192, 192))[3] == 255
+    assert r["tiles_written"] == 3
+
+
+@pytest.mark.parametrize("out", ["tiles", "link", "tiles/antique"])
+def test_sea_fill_refuses_to_write_over_its_source(tmp_path, out):
+    import sea_fill
+
+    manifest = _sea_export(tmp_path / "tiles")
+    (tmp_path / "link").symlink_to(tmp_path / "tiles")
+    before = sorted((tmp_path / "tiles").rglob("*.png"))
+    with pytest.raises(ValueError, match="overlaps"):
+        sea_fill.fill(tmp_path / "tiles", "antique", manifest, {(1, 1, 1)}, "#143c78", tmp_path / out)
+    assert sorted((tmp_path / "tiles").rglob("*.png")) == before
+
+
+# -- scripts/zoom_continuity.py ----------------------------------------------------------------------
+
+
+def test_zoom_continuity_compares_only_pixels_opaque_in_both(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import zoom_continuity
+
+    def tile(z, x, y, im):
+        p = tmp_path / str(z) / str(x) / f"{y}.png"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        im.save(p)
+
+    for x in (0, 1):
+        for y in (0, 1):
+            tile(1, x, y, PIL.new("RGBA", (256, 256), (20, 60, 120, 255)))
+    parent = PIL.new("RGBA", (256, 256), (255, 0, 0, 128))  # a fringe whose colour means nothing
+    parent.paste((20, 60, 120, 255), (0, 0, 128, 256))
+    tile(0, 0, 0, parent)
+    got = zoom_continuity.compare(tmp_path, 0, 1)
+    assert (got["pixels"], got["mean_abs_rgb"], got["hist_hellinger"]) == (128 * 256, 0.0, 0.0)
+    tile(0, 0, 0, PIL.new("RGBA", (256, 256), (20, 60, 120, 254)))
+    assert zoom_continuity.compare(tmp_path, 0, 1) is None
