@@ -1,0 +1,11 @@
+{
+ "tag": "tiles-92459a0f79b0",
+ "asset": "tiles-92459a0f79b0.tar",
+ "sha256": "92459a0f79b019d465aee939b3eee70696db60be2ff60b41cbbceb4d2646854c",
+ "bytes": 1250027520,
+ "areas": [
+  "cook-strait",
+  "iceland",
+  "reunion"
+ ]
+}
