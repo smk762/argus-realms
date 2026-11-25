@@ -1,0 +1,105 @@
+"""scripts/tiles_release.py: what goes into the public archive, and what a build refuses."""
+
+import json
+import sys
+import tarfile
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import tiles_release as tr  # noqa: E402
+
+AREAS = sorted({Path(r["tiles"]).name for r in tr.regions()})
+
+
+def _tiles(root: Path) -> Path:
+    for area in AREAS:
+        for style in ("antique", "secret"):
+            f = root / area / style / "8" / "1" / "2.png"
+            f.parent.mkdir(parents=True)
+            f.write_bytes(f"{area}{style}".encode())
+        styles = [{"name": "antique", "patron_only": False}, {"name": "secret", "patron_only": True}]
+        (root / area / "labels.geojson").write_text("{}")
+        (root / area / "manifest.json").write_text(json.dumps({"styles": styles, "labels_url": "x"}))
+    return root
+
+
+def _packed(tmp_path: Path) -> tuple[Path, dict, Path]:
+    tiles, lock = _tiles(tmp_path / "in"), tmp_path / "lock.json"
+    record = tr.pack(AREAS, tiles, tmp_path / "out", lock)
+    return tmp_path / "out" / record["asset"], record, lock
+
+
+def test_a_patron_only_style_never_reaches_the_public_archive(tmp_path):
+    archive, _, _ = _packed(tmp_path)
+    with tarfile.open(archive) as tar:
+        assert not [n for n in tar.getnames() if "secret" in n]
+        for area in AREAS:
+            styles = json.load(tar.extractfile(f"{area}/manifest.json"))["styles"]
+            assert [s["name"] for s in styles] == ["antique"]
+
+
+def test_the_archive_names_no_owner_and_is_reproducible(tmp_path):
+    archive, record, _ = _packed(tmp_path)
+    again = tr.pack(AREAS, tmp_path / "in", tmp_path / "out2", tmp_path / "lock2.json")
+    assert again == record
+    with tarfile.open(archive) as tar:
+        assert {(m.uname, m.uid, m.mtime) for m in tar.getmembers()} == {("", 0, 0)}
+
+
+def test_fetch_restores_the_packed_set(tmp_path):
+    archive, _, lock = _packed(tmp_path)
+    tr.fetch(AREAS, tmp_path / "restored", lock, archive.parent)
+    for area in AREAS:
+        assert (
+            tmp_path / "restored" / area / "antique" / "8" / "1" / "2.png"
+        ).read_bytes() == f"{area}antique".encode()
+
+
+def test_a_changed_archive_is_refused(tmp_path):
+    archive, _, lock = _packed(tmp_path)
+    data = bytearray(archive.read_bytes())
+    data[600] ^= 1
+    archive.write_bytes(data)
+    with pytest.raises(SystemExit, match="does not match"):
+        tr.fetch(AREAS, tmp_path / "restored", lock, archive.parent)
+    assert not (tmp_path / "restored").exists()
+
+
+def test_a_missing_area_or_region_is_refused(tmp_path):
+    archive, _, lock = _packed(tmp_path)
+    with pytest.raises(SystemExit, match="no tiles for: atlantis"):
+        tr.fetch([*AREAS, "atlantis"], tmp_path / "restored", lock, archive.parent)
+    with pytest.raises(SystemExit, match="arena regions with no tiles"):
+        tr.pack(AREAS[:1], tmp_path / "in", tmp_path / "out", tmp_path / "lock.json")
+
+
+def test_two_sets_are_never_mixed(tmp_path):
+    archive, _, lock = _packed(tmp_path)
+    (tmp_path / "restored" / AREAS[0]).mkdir(parents=True)
+    with pytest.raises(SystemExit, match="already holds"):
+        tr.fetch(AREAS, tmp_path / "restored", lock, archive.parent)
+
+
+def _arena(dist: Path, skip: str = "", placeholder: bool = False) -> Path:
+    (dist / "regions").mkdir(parents=True)
+    for r in tr.regions():
+        styles = json.loads((tr.ROOT / r["manifest"]).read_text())["styles"]
+        built = {"styles": styles, "placeholder": placeholder}
+        (dist / "regions" / f"{r['id']}.json").write_text(json.dumps(built))
+        for s in styles:
+            f = dist / "tiles" / r["id"] / s["name"] / "8" / "1" / "2.webp"
+            f.parent.mkdir(parents=True)
+            if s["name"] != skip:
+                f.write_bytes(b"x")
+    return dist
+
+
+def test_a_partly_painted_arena_is_refused(tmp_path):
+    tr.check_arena(_arena(tmp_path / "full"))
+    with pytest.raises(SystemExit, match="antique"):
+        tr.check_arena(_arena(tmp_path / "partial", skip="antique"))
+    with pytest.raises(SystemExit, match="all tiles"):
+        tr.check_arena(_arena(tmp_path / "placeholder", placeholder=True))
