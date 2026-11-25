@@ -1,8 +1,10 @@
 """scripts/tiles_release.py: what goes into the public archive, and what a build refuses."""
 
 import json
+import subprocess
 import sys
 import tarfile
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -103,3 +105,19 @@ def test_a_partly_painted_arena_is_refused(tmp_path):
         tr.check_arena(_arena(tmp_path / "partial", skip="antique"))
     with pytest.raises(SystemExit, match="all tiles"):
         tr.check_arena(_arena(tmp_path / "placeholder", placeholder=True))
+
+
+def test_a_tile_set_tag_is_never_the_version(tmp_path):
+    raw = tomllib.loads((tr.ROOT / "pyproject.toml").read_text())["tool"]["hatch"]["version"]["raw-options"]
+
+    def git(*args: str) -> str:
+        who = ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"]
+        done = subprocess.run(["git", *who, *args], cwd=tmp_path, check=True, capture_output=True, text=True)
+        return done.stdout
+
+    git("init", "-q")
+    git("commit", "-q", "--allow-empty", "-m", "release")
+    git("tag", "v0.1.0")
+    git("commit", "-q", "--allow-empty", "-m", "tiles")
+    git("tag", "tiles-92459a0f79b0")
+    assert git(*raw["git_describe_command"][1:]).startswith("v0.1.0-1-g")

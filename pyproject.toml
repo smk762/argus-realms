@@ -32,6 +32,10 @@ source = "vcs"
 # No tags yet: start at 0.0.0 rather than failing the build.
 fallback-version = "0.0.0"
 
+[tool.hatch.version.raw-options]
+# Only v* tags are versions: a tile set's tag (tiles-<sha>, docs/deploy.md section 6) can't be parsed as one.
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*"]
+
 [tool.hatch.build.hooks.vcs]
 version-file = "src/atlas_realms/_version.py"
 

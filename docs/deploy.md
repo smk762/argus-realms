@@ -79,7 +79,7 @@ make tiles-pack                      # dist/tiles-<sha>.tar, without patron-only
 tag=$(jq -r .tag data/tiles.lock.json)
 gh release create "$tag" "dist/$tag.tar" --target dev --latest=false --title "Map tiles $tag" --notes "Painted tiles for Atlas and Realms."
 ```
-Commit `data/tiles.lock.json` with the docs import it belongs to, after the release exists. Each set gets its own tag: never replace a published asset. The release is public. `make tiles-fetch` downloads the set into an empty `var/tiles-areas/` on any machine.
+Without the current bakes in `var/maps/`, `make tiles-pack` would first re-export the stale ones over `var/tiles-areas/`: move them aside, or set `MAPS` to an empty folder. Commit `data/tiles.lock.json` with the docs import it belongs to, after the release exists. Each set gets its own tag: never replace a published asset. The release is public. `make tiles-fetch` downloads the set into an empty `var/tiles-areas/` on any machine.
 
 The manual commands below are the fallback.
 
