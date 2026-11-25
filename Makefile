@@ -3,7 +3,7 @@ UV ?= uv
 TEST_DSN ?= postgresql://atlas:atlas@127.0.0.1:5433/postgres
 
 .PHONY: help install lint format test test-db check static-check atlas-docs bake-plans sim db-up db-down migrate tick tiles static sea-masks preview clean \
-	arena arena-check arena-test arena-dev arena-tiles-test
+	tiles-pack tiles-fetch arena arena-check arena-painted arena-test arena-dev arena-tiles-test
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -69,6 +69,12 @@ OVERVIEW_MIN_seto ?= 9
 OVERVIEW_MIN_salish ?= 9
 OVERVIEW_MIN_cape ?= 9
 
+tiles-pack: tiles  ## Pack the public tiles into dist/tiles-<sha>.tar for a GitHub release, and write data/tiles.lock.json
+	$(UV) run --no-sync python scripts/tiles_release.py pack --areas "$(AREAS)"
+
+tiles-fetch:  ## Download the tiles data/tiles.lock.json names, checked against its sha256, into var/tiles-areas
+	$(UV) run --no-sync python scripts/tiles_release.py fetch --areas "$(AREAS)"
+
 static: tiles  ## Static map demo (no game, areas in $$MAPS/areas/<area>/<style>/<job>) in dist/static, e.g. for Cloudflare Pages
 	$(UV) run --no-sync python scripts/build_static.py --tiles var/tiles-areas --out dist/static --areas "$(AREAS)"
 
@@ -86,6 +92,9 @@ TILES ?= $(if $(wildcard var/tiles-areas),1,)
 
 arena:  ## Build the browser arena into arena/dist (each region's painted tiles unless TILES=)
 	$(UV) run --no-sync python arena/build.py $(if $(TILES),--tiles,)
+
+arena-painted:  ## Fail if arena/dist lacks any region's painted styles (a deploy must not ship the placeholder)
+	$(UV) run --no-sync python scripts/tiles_release.py check-arena
 
 arena-check:  ## Check arena/index.html without building: pasted strip, marker, no inline scripts or styles, CSP
 	$(UV) run --no-sync python arena/build.py --check

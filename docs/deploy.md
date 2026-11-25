@@ -19,7 +19,7 @@ The production branch of both projects is `main`. A deploy with any other `--bra
 
 ## 2. Data that isn't in git
 
-`var/` is git-ignored. Copy it from a machine that already has it, or rebuild it from bakes:
+`var/` is git-ignored. Copy it from a machine that already has it, fetch the published tiles (`make tiles-fetch`, §6), or rebuild it from bakes:
 
 | Path | Size (Nov 2026) | What it is |
 |---|---|---|
@@ -70,6 +70,18 @@ Atlas publishes the argus-atlas docs at `/docs/`, and "How it was made" links ea
 - `make static-check` (CI) checks the import offline: the record, the opsec gate, the render, and every anchor the panel links to. The gate's private names come from `OPSEC_DENYLIST` (a repository secret in CI; locally the environment or a gitignored `.opsec-denylist` file) and are never committed; unset, only that check is skipped.
 
 ## 6. Build and deploy
+
+`.github/workflows/pages.yml` deploys both sites from every `dev` commit that passes CI. It needs the repository secrets `CLOUDFLARE_API_TOKEN` (Pages: Edit) and `CLOUDFLARE_ACCOUNT_ID`, and a published tile set. It refuses tiles that don't match `data/tiles.lock.json`, tiles from another argus-atlas commit than `sync.json`, and an arena with any region or style unpainted.
+
+**Publishing a tile set** (after a bake, on a machine with `var/tiles-areas/` or `var/maps/`):
+```bash
+make tiles-pack                      # dist/tiles-<sha>.tar, without patron-only styles, and data/tiles.lock.json
+tag=$(jq -r .tag data/tiles.lock.json)
+gh release create "$tag" "dist/$tag.tar" --target dev --latest=false --title "Map tiles $tag" --notes "Painted tiles for Atlas and Realms."
+```
+Commit `data/tiles.lock.json` with the docs import it belongs to, after the release exists. Each set gets its own tag: never replace a published asset. The release is public. `make tiles-fetch` downloads the set into an empty `var/tiles-areas/` on any machine.
+
+The manual commands below are the fallback.
 
 **Credentials:** Wrangler reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment. Keep them in a file outside the repo, mode 600, and load it with `set -a; . <file>; set +a`. Never commit them or print them in logs.
 

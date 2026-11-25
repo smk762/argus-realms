@@ -1,0 +1,118 @@
+name: Deploy Atlas and Realms
+
+# Publishes atlas.dragonhound.dev (Pages project atlas-realms) and realms.dragonhound.dev (argus-realms) from every dev
+# commit that passed CI. Production is the Pages branch `main`; any other --branch is only a preview.
+#
+# The painted tiles come from the GitHub release named in data/tiles.lock.json, checked against its sha256
+# (docs/deploy.md section 6). Without that file, or without the repo secrets CLOUDFLARE_API_TOKEN (Account > Cloudflare
+# Pages > Edit) and CLOUDFLARE_ACCOUNT_ID, nothing is uploaded and a notice says why.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # Only dev itself: a pull request's CI run, or a dispatch from another branch, never deploys.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # On the job, so a skipped run never cancels a deploy.
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0 # hatch-vcs derives the version from git
+          persist-credentials: false
+
+      # CI runs can finish out of order; an older commit must not replace a newer one.
+      - id: ready
+        run: |
+          head=$(git ls-remote origin refs/heads/dev | cut -f1)
+          [ -n "$head" ] || { echo "::error::could not read dev"; exit 1; }
+          if [ "$head" != "$SHA" ]; then echo "::notice::dev has moved past ${SHA::7}; its own run deploys."
+          elif [ ! -f data/tiles.lock.json ]; then echo "::notice::no data/tiles.lock.json: no tile set is published yet, nothing to deploy."
+          else echo "go=true" >> "$GITHUB_OUTPUT"; fi
+
+      - if: steps.ready.outputs.go == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - if: steps.ready.outputs.go == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: arena/package-lock.json
+      - if: steps.ready.outputs.go == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/tiles
+          key: tiles-${{ hashFiles('data/tiles.lock.json') }}
+      - if: steps.ready.outputs.go == 'true'
+        run: uv venv --python 3.12 && uv pip install -e ".[server,dev]"
+      - if: steps.ready.outputs.go == 'true'
+        run: make test # a dispatch doesn't wait for CI
+        env:
+          OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
+
+      - if: steps.ready.outputs.go == 'true'
+        run: make tiles-fetch
+
+      # Refuses tiles baked at another argus-atlas commit than docs/atlas/sync.json.
+      - if: steps.ready.outputs.go == 'true'
+        run: make static
+        env:
+          OPSEC_DENYLIST: ${{ secrets.OPSEC_DENYLIST }}
+      - if: steps.ready.outputs.go == 'true'
+        run: npm ci --prefix arena
+      - if: steps.ready.outputs.go == 'true'
+        run: make arena TILES=1 arena-painted
+
+      - if: steps.ready.outputs.go == 'true' && env.HAS_TOKEN != 'true'
+        run: echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set; built ${SHA::7} but did not deploy."
+
+      - if: steps.ready.outputs.go == 'true' && env.HAS_TOKEN == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          deploy() { npx --yes wrangler@4.162.0 pages deploy "$1" --project-name "$2" --branch main --commit-hash "$SHA" --commit-message "dev ${SHA::7}"; }
+          deploy dist/static atlas-realms
+          deploy arena/dist argus-realms
+
+      # The site, and one tile of every area or region that ships.
+      - if: steps.ready.outputs.go == 'true' && env.HAS_TOKEN == 'true'
+        run: |
+          live() {
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              code=$(curl -sS -o /dev/null -w '%{http_code}' "$1" || true)
+              [ "$code" = 200 ] && break
+              sleep 6
+            done
+            echo "$code $1"; [ "$code" = 200 ]
+          }
+          live https://atlas.dragonhound.dev/ || exit 1
+          for area in dist/static/tiles/*/; do
+            tile=$(find "$area" -name '*.png' | sort | sed -n 1p)
+            live "https://atlas.dragonhound.dev/${tile#dist/static/}" || exit 1
+          done
+          live https://realms.dragonhound.dev/ || exit 1
+          for region in arena/dist/tiles/*/; do
+            tile=$(find "$region" -name '*.webp' | sort | sed -n 1p)
+            live "https://realms.dragonhound.dev/${tile#arena/dist/}" || exit 1
+          done
