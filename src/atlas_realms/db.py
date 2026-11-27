@@ -13,6 +13,7 @@ import structlog
 log = structlog.get_logger()
 
 DEFAULT_DSN = "postgresql://atlas:atlas@127.0.0.1:5433/atlas_realms"
+CONNECT_TIMEOUT = 10  # seconds: a server behind a NetworkPolicy that drops the packets must not hang the caller
 
 
 def dsn() -> str:
@@ -25,7 +26,7 @@ def connect(url: str | None = None) -> psycopg.Connection:
     In psycopg's default mode the first statement opens an implicit transaction, and every later
     `conn.transaction()` becomes a savepoint inside it that only commits when the connection closes.
     """
-    return psycopg.connect(url or dsn(), autocommit=True)
+    return psycopg.connect(url or dsn(), autocommit=True, connect_timeout=CONNECT_TIMEOUT)
 
 
 def migration_files() -> list[tuple[str, str]]:

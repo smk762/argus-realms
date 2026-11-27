@@ -1,9 +1,12 @@
 """HTTP API and static files for the browser client.
 
     python -m atlas_realms.api --tiles var/tiles-areas/cook-strait --port 8110      # then open http://127.0.0.1:8110
+    python -m atlas_realms.api --world cook-strait,iceland --host 0.0.0.0           # the shared world's API
 
-Solo arena only for now: sessions live in memory and are lost on restart. PvP (accounts, the shared
-Postgres world) adds its own routes next to these without changing the client's state shape.
+Solo mode: sessions live in memory and are lost on restart, so it runs as one process. World mode (`--world`, what
+Kubernetes runs, `deploy/k8s/`) keeps nothing in memory: every request reads the regions' databases, so it scales
+out. For now it reports each region's tick; PvP (accounts, orders) adds its routes there without changing the
+client's state shape.
 """
 
 import argparse
@@ -11,15 +14,22 @@ import json
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from atlas_realms import __version__
+from atlas_realms.db import connect
 from atlas_realms.protocol import SPAWNS, Control, Looks, NewSolo, OrderIn, check_new
 from atlas_realms.protocol import meta as solo_meta
+from atlas_realms.regions import is_ready, region_dsn
 from atlas_realms.solo import Session, build_world
+
+log = structlog.get_logger()
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "web"
@@ -29,6 +39,7 @@ IDLE_SECONDS = 30 * 60  # a session untouched this long may be evicted to make r
 MAX_PER_CLIENT = 3  # games one client address may hold: its oldest makes room for a new one, so no one fills the arena
 MAX_BUILDS = 2  # world builds running at once (each is CPU-heavy)
 BUILD_WAIT = 30.0  # seconds a new game waits for a build slot before a 503
+READY_POLL = 3.0  # seconds between looks at a region's database until it is migrated and seeded
 
 
 def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI:
@@ -167,6 +178,94 @@ def create_app(tiles: Path, web: Path = WEB, outline: Path = OUTLINE) -> FastAPI
     return app
 
 
+def region_status(region: str) -> dict:
+    with connect(region_dsn(region)) as c:
+        tick, at = c.execute("SELECT coalesce(max(id), 0), max(finished_at) FROM ticks").fetchone()
+        players = c.execute("SELECT count(*) FROM users WHERE NOT bot AND deleted_at IS NULL").fetchone()[0]
+    return {"id": region, "tick": tick, "last_tick_at": at.isoformat() if at else None, "players": players}
+
+
+def region_ready(region: str) -> bool:
+    with connect(region_dsn(region)) as c:
+        return is_ready(c)
+
+
+def create_world_app(regions: list[str]) -> FastAPI:
+    """The shared world's API: one database per region (`atlas_realms.regions`), no state of its own.
+
+    `/health` answers `starting` (503) until every region's database has been found migrated and seeded once, so
+    Kubernetes routes no traffic to it before the migrate job has run. After that it is 200: `ok`, or `degraded` when
+    a region stops answering (`?checks=0` skips that look, for the liveness probe), so a database restart doesn't
+    restart the API. The body follows argus_cortex.service.ServiceHealth's fields.
+    """
+    ready: set[str] = set()
+    stop = threading.Event()
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def watch() -> None:
+        while not stop.is_set() and ready != set(regions):
+            for r in set(regions) - ready:
+                try:
+                    if region_ready(r):
+                        ready.add(r)
+                        log.info("region_ready", region=r)
+                except Exception as e:  # noqa: BLE001 - not reachable yet is the normal state at startup
+                    log.info("region_waiting", region=r, reason=type(e).__name__)
+            stop.wait(READY_POLL)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        t = threading.Thread(target=watch, name="region-ready", daemon=True)
+        t.start()
+        yield
+        stop.set()
+
+    app = FastAPI(title="Atlas Realms world", lifespan=lifespan)
+
+    def check(region: str) -> dict:
+        t0 = time.perf_counter()
+        try:
+            ok, detail = region_ready(region), None
+        except Exception as e:  # noqa: BLE001 - a failing dependency is a result, not an error in this route
+            ok, detail = False, type(e).__name__  # the type only: a message can carry a host or a DSN
+        return {"ok": ok, "detail": detail, "latency_ms": round((time.perf_counter() - t0) * 1000, 1)}
+
+    # nosemgrep: handrolled-health argus-atlas 0.5 pins argus-cortex<0.15, which has no argus_cortex.service; switch to install_health once argus-atlas 0.6 (cortex 0.16) is released
+    @app.get("/health")
+    def health(checks: str = "1") -> JSONResponse:
+        body = {
+            "service_version": "1.1",
+            "service": "atlas-realms",
+            "version": __version__,
+            "started_at": started_at,
+            "regions": list(regions),
+        }
+        if ready != set(regions):
+            return JSONResponse({**body, "status": "starting", "checks": {}}, status_code=503)
+        results = {} if checks.lower() in ("0", "false", "no", "off") else {r: check(r) for r in regions}
+        status = "degraded" if any(not c["ok"] for c in results.values()) else "ok"
+        return JSONResponse({**body, "status": status, "checks": results}, headers={"Cache-Control": "no-store"})
+
+    def known(region: str) -> str:
+        if region not in regions:
+            raise HTTPException(404, "no such region")
+        return region
+
+    @app.get("/api/meta")
+    def meta() -> dict:
+        return solo_meta()
+
+    @app.get("/api/world")
+    def world() -> dict:
+        return {"regions": [region_status(r) for r in regions]}
+
+    @app.get("/api/world/{region}")
+    def one_region(region: str) -> dict:
+        return region_status(known(region))
+
+    return app
+
+
 def main() -> None:
     import uvicorn
 
@@ -177,10 +276,12 @@ def main() -> None:
         default=ROOT / "var" / "tiles-areas" / "cook-strait",
         help="Exported tiles (python -m atlas_realms.tiles)",
     )
+    p.add_argument("--world", help="Serve the shared world's regions (comma-separated ids) instead of the solo arena")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8110)
     a = p.parse_args()
-    uvicorn.run(create_app(a.tiles), host=a.host, port=a.port)
+    app = create_world_app([r for r in a.world.split(",") if r]) if a.world else create_app(a.tiles)
+    uvicorn.run(app, host=a.host, port=a.port)
 
 
 if __name__ == "__main__":

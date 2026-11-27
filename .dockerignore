@@ -1,0 +1,13 @@
+# The app image (Dockerfile) takes only what it copies: never var/ (tiles, bakes), .venv or .git.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!NOTICE
+!src/
+!web/
+!data/
+!arena/regions.json
+!arena/world/
+**/__pycache__
+src/atlas_realms/_version.py

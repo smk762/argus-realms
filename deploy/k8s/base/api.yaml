@@ -1,0 +1,112 @@
+# The shared world's API (`atlas_realms.api --world`). It keeps no state of its own, so it scales out on CPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realms-api
+  labels:
+    app.kubernetes.io/name: realms-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: realms-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: realms-api
+        realms.dragonhound.dev/db-client: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: atlas-realms:unpinned
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "atlas_realms.api", "--world", "$(REGIONS)", "--host", "0.0.0.0", "--port", "8110"]
+          env:
+            - name: REGIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: realms-regions
+                  key: regions
+            - name: ATLAS_REALMS_DSN
+              value: host=realms-db-rw port=5432 sslmode=require
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: realms-db-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: realms-db-app
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8110
+          # 503 ("starting") until every region's database is migrated and seeded, so no traffic before the migrate
+          # job has run. A region that stops answering later is "degraded", still 200.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # The process answers at all. Not /health: it is 503 while the regions are being prepared.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: realms-api
+  labels:
+    app.kubernetes.io/name: realms-api
+spec:
+  selector:
+    app.kubernetes.io/name: realms-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: realms-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: realms-api
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

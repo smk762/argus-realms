@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 
 from atlas_realms.bakeplan import SEA_TEST_RES  # the bake plan's land test
 from atlas_realms.db import connect, migrate
-from atlas_realms.rules.chunks import Tile, cell_chunks
+from atlas_realms.rules.chunks import Tile, at_zoom, cell_chunks
 from atlas_realms.rules.tunables import DEFAULT, Tunables
 
 
@@ -103,6 +103,14 @@ def _clip_ring(ring: list, box: tuple[float, float, float, float]) -> list:
     return pts + pts[:1]
 
 
+def ready_chunks(manifest: dict, outline: Path, t: Tunables = DEFAULT) -> set[Tile]:
+    """The chunks a world is built on: the baked ones at the game's chunk zoom (Iceland's z7 chunks are mapped onto
+    it), plus the open sea inside the painted block (`sea_chunks`), which needs no painting, so a strait between baked
+    coasts is open water to play on rather than fog."""
+    baked = at_zoom(manifest["ready_chunks"], t.chunk_zoom)
+    return baked | sea_chunks(baked, outline, t.chunk_zoom)
+
+
 def plan_hexes(
     ready: set[Tile], land: set[str], spawns: list[tuple[float, float]], t: Tunables = DEFAULT
 ) -> list[dict]:
@@ -153,8 +161,10 @@ def h3_home(cell: str, z: int) -> Tile:
     return home_chunk(cell, z)
 
 
-def seed(conn: psycopg.Connection, manifest: dict, land: set[str], spawns: list[tuple[float, float]]) -> int:
-    ready = {tuple(c) for c in manifest["ready_chunks"]}
+def seed(conn: psycopg.Connection, manifest: dict, outline: Path, spawns: list[tuple[float, float]]) -> int:
+    """Seed (or re-seed) the hexes, chunks and styles of one world, as the solo arena builds it (`ready_chunks`)."""
+    ready = ready_chunks(manifest, outline)
+    land = land_cells(outline, DEFAULT.h3_resolution)
     styles = [s["name"] for s in manifest["styles"]]
     rows = plan_hexes(ready, land, spawns)
     with conn.transaction():
@@ -193,7 +203,7 @@ def main() -> None:
     manifest = json.loads(a.manifest.read_text())
     with connect() as conn:
         migrate(conn)
-        n = seed(conn, manifest, land_cells(a.outline, DEFAULT.h3_resolution), spawns)
+        n = seed(conn, manifest, a.outline, spawns)
         counts = dict(
             conn.execute(
                 "SELECT zone::text || CASE WHEN playable THEN '' ELSE ' (fog)' END, count(*) FROM hexes GROUP BY 1 ORDER BY 1"

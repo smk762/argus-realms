@@ -65,6 +65,9 @@ What's here:
 - `src/atlas_realms/tick/`: the tick engine. It's a pure function of world state, orders and a seed, replayable from the database. In the shared world each tick mixes a [drand](https://drand.love/) quicknet round into its battle seeds, so neither the server nor players can predict rolls.
 - **The solo arena**, playable in the browser (`web/`, served by `atlas_realms.api`): you against eight bots around Cook Strait, New Zealand. Each bot has its own personality, carries a bounty and grows stronger with each kill.
 - A Postgres 16 + PostGIS + h3-pg schema and migrations for the shared world. PvP accounts aren't built yet.
+- `deploy/k8s/`: the shared world on Kubernetes, with one database and one tick worker per region, Postgres through
+  CloudNativePG, and the API scaling on CPU. `make k8s-up` runs it on k3d. See [docs/deploy.md §8](docs/deploy.md#8-the-shared-world-on-kubernetes), and
+  [docs/regions.md](docs/regions.md) for adding a region (outline, bake, Atlas, arena, shared world).
 
 The arena needs its server and the Cook Strait tiles from `bakes/cook-strait.sh`, exported by `make tiles`:
 

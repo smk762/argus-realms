@@ -1,0 +1,31 @@
+# One Postgres 16 + PostGIS + h3-pg server (db/cnpg/Dockerfile) for every region. Each region is its own database on
+# it, a CloudNativePG `Database` generated from the overlay's regions.txt, so its tick lock, tick ids and players are
+# its own. The owner's password is the out-of-band Secret `realms-db-app` (docs/deploy.md): never committed.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: realms-db
+spec:
+  instances: 1
+  # Replaced with the image built from db/cnpg/Dockerfile, tagged by its image id (scripts/k8s.py pin).
+  imageName: atlas-realms-db:unpinned
+  imagePullPolicy: IfNotPresent
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: realms
+      owner: realms
+      secret:
+        name: realms-db-app
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  postgresql:
+    parameters:
+      shared_buffers: 128MB
+      max_connections: "100"
