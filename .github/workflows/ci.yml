@@ -103,3 +103,48 @@ jobs:
     # argus-ci suite rules: lint rules that each eliminate a finding class. New violations fail;
     # existing ones are in .suite-rules-baseline.json, which may only shrink.
     uses: smk762/argus-ci/.github/workflows/suite-rules.yml@v1
+
+  # The shared world on Kubernetes (deploy/k8s/): a kind cluster with Calico (so NetworkPolicy is enforced), the
+  # images built here and pinned by image id, CloudNativePG pinned by version and manifest sha256. The smoke test
+  # (scripts/k8s.py smoke): API healthy, both regions ticking, a scripted order applied, a worker killed mid-game
+  # resuming from the database, and Postgres refusing a pod without the db-client label.
+  k8s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CALICO_VERSION: v3.33.0
+      CALICO_SHA256: 2de8f47595fb9c41b3f47d7b767a1f8e72ecf84057af834738ff12689a234da5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - run: uv venv --python 3.12 && uv pip install -e ".[server,dev]"
+      - uses: helm/kind-action@v1
+        with:
+          version: v0.33.0
+          kubectl_version: v1.36.6
+          cluster_name: realms
+          config: deploy/k8s/kind.yaml
+          wait: 0s  # no CNI yet: the node is NotReady until Calico is up
+      - name: Calico
+        run: |
+          curl -fsSLo calico.yaml "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml"
+          echo "${CALICO_SHA256}  calico.yaml" | sha256sum -c -
+          kubectl apply -f calico.yaml
+          kubectl -n kube-system rollout status daemonset/calico-node --timeout=300s
+          kubectl wait node --all --for=condition=Ready --timeout=300s
+      - run: make k8s-images
+      - run: kind load docker-image --name realms $(cat var/k8s/images.txt)
+      - run: make k8s-deploy
+      - run: make k8s-smoke
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get all,clusters.postgresql.cnpg.io,databases.postgresql.cnpg.io,networkpolicies -A -o wide || true
+          kubectl -n realms describe pods || true
+          kubectl -n realms logs -l app.kubernetes.io/part-of=atlas-realms --all-containers --prefix --tail=200 || true
+          kubectl -n realms logs -l cnpg.io/cluster=realms-db --all-containers --prefix --tail=200 || true
+          kubectl -n cnpg-system logs deployment/cnpg-controller-manager --tail=200 || true

@@ -1,12 +1,17 @@
 """Run ticks against the database.
 
-    python -m atlas_realms.tick.runner          # one tick (for cron)
-    python -m atlas_realms.tick.runner --loop   # tick on every tick_seconds boundary
+    python -m atlas_realms.tick.runner                              # one tick (for cron)
+    python -m atlas_realms.tick.runner --loop                       # tick on every tick_seconds boundary
+    python -m atlas_realms.tick.runner --loop --region cook-strait  # one region of the shared world (its own database)
 
 Each tick is one transaction under a transaction-level advisory lock. If the lock is taken
 (the previous tick is still running) the tick is skipped, never overlapped. After loading its
 orders the tick waits for the next drand round and mixes it into its battle seeds; if no relay
 has it, the tick is skipped too and the orders wait for the next one.
+
+A worker that dies mid-tick loses nothing: the transaction rolls back, and whichever process ticks next loads the
+same state and orders from the database. On Kubernetes each region runs one of these (`deploy/k8s/`); `--heartbeat`
+names a file touched after every tick attempt, which the liveness probe reads.
 """
 
 import argparse
@@ -14,12 +19,14 @@ import datetime as dt
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import psycopg
 import structlog
 from psycopg.types.json import Jsonb
 
 from atlas_realms.db import connect, migrate
+from atlas_realms.regions import region_dsn
 from atlas_realms.rules.beacon import Beacon
 from atlas_realms.rules.tunables import DEFAULT, Tunables
 from atlas_realms.tick.beacon import BeaconUnavailable, next_beacon
@@ -80,14 +87,21 @@ def run_once(
 def main() -> None:
     p = argparse.ArgumentParser(description="Run game ticks")
     p.add_argument("--loop", action="store_true", help="Keep ticking on every tick_seconds boundary")
+    p.add_argument("--region", help="Tick this region's database (atlas_realms.regions) instead of ATLAS_REALMS_DSN's")
+    p.add_argument("--no-migrate", action="store_true", help="Don't apply migrations first (a deploy job did)")
+    p.add_argument("--heartbeat", type=Path, help="File to touch after every tick attempt (for a liveness probe)")
     a = p.parse_args()
-    with connect() as conn:
-        migrate(conn)
-        if not a.loop:
-            run_once(conn)
-            return
+    if a.region:
+        structlog.contextvars.bind_contextvars(region=a.region)
+    with connect(region_dsn(a.region) if a.region else None) as conn:
+        if not a.no_migrate:
+            migrate(conn)
         while True:
             run_once(conn)
+            if a.heartbeat:
+                a.heartbeat.touch()
+            if not a.loop:
+                return
             period = DEFAULT.tick_seconds
             time.sleep(period - time.time() % period)
 

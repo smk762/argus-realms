@@ -1,0 +1,16 @@
+# The shared world on Kubernetes: Postgres (CloudNativePG), the API, the migrate job and the network policies.
+# The tick workers, one per region, and each region's database come from the overlay's regions.txt
+# (scripts/k8s.py regions). See docs/deploy.md, "Kubernetes".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: realms
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: atlas-realms
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - db.yaml
+  - api.yaml
+  - migrate.yaml
+  - networkpolicy.yaml

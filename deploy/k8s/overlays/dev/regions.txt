@@ -1,0 +1,4 @@
+# The shared world's regions, one per line: each gets its own database and its own tick worker.
+# An id from arena/regions.json. After editing, run `make k8s-regions` and commit regions.yaml with this file.
+cook-strait
+iceland

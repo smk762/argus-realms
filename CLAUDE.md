@@ -53,6 +53,11 @@ skip locally unless `ATLAS_REALMS_TEST_DSN` is set (`make test-db`).
 | An inline script or style on a page (the CSPs allow none), or a pasted demo strip that drifts from `dh-strip.html` | `tests/test_build_static.py::test_an_inline_script_on_any_page_fails_the_build`; CI `static` (`build_static.py --check`); CI `arena` (`arena/build.py` runs `check_page`) |
 | An edited copy in `site/vendor/dh/` | CI `dh-shared` job (`sync-shared.mjs --check`) |
 | One client filling the solo arena, or a live game evicted for a new one | `tests/test_api.py::test_one_client_cannot_fill_the_arena`, `::test_a_full_arena_refuses_new_games_instead_of_evicting_live_ones`, `::test_the_bot_roster_is_bounded` |
+| Two tick workers for one region, a region without its own database, or a stale `deploy/k8s/overlays/dev/regions.yaml` | `tests/test_k8s.py::test_every_region_is_an_arena_region_with_its_own_database_and_one_worker` (one replica, `Recreate`), `::test_the_committed_regions_manifest_is_current`; the tick lock is per database (`tests/test_tick_db.py::test_skips_while_another_tick_holds_the_lock`, CI `db`) |
+| A worker killed mid-game losing or repeating state | CI `k8s` (`scripts/k8s.py smoke`: kills a region's worker, then checks contiguous finished ticks, the order applied once, the walk resumed) |
+| A committed Secret, a floating image tag, or a privileged or unbounded pod in `deploy/k8s/` | `tests/test_k8s.py::test_no_secret_is_committed`, `::test_every_pod_is_unprivileged_bounded_and_pinned_at_deploy`, `::test_the_operator_is_pinned_by_version_and_digest` |
+| Postgres reachable from a pod other than the API, the workers and the migrate job, or any ingress to a worker | `tests/test_k8s.py::test_only_db_clients_reach_postgres_and_nothing_reaches_the_workers`; CI `k8s` (kind + Calico: an unlabelled pod must fail to connect) |
+| A hand-rolled `/health` | argus-ci `handrolled-health` (CI `suite-rules`). One exception: the world API's route in `api.py` (`nosemgrep`) until argus-atlas 0.6 allows argus-cortex 0.16's `install_health` |
 | Tile maths reimplemented here instead of imported from argus-atlas, or a general map feature built here rather than in argus-atlas | **UNENFORCED**: review only (no check can tell a reimplementation or a "general" feature from game code) |
 | A loading quote (`arena/src/quotes.json`) that isn't genuine and sourced | **UNENFORCED**: needs a human to check the source |
 
@@ -152,6 +157,25 @@ on Iceland); a new mutable field on Hex/Unit/User/Contract must be copied there 
 Don't edit `site/vendor/dh` from here: the arena copies it at build time (its pasted strip may differ only in the
 label suffix, which `build.py` allows). Loading quotes live in `arena/src/quotes.json`: genuine, sourced words only.
 
+Adding a region end to end (outline → bake plan → bake → Atlas → arena → shared world): `docs/regions.md`; keep it in
+step when a stage changes.
+
+Shared world on Kubernetes (`deploy/k8s/`, docs/deploy.md §8):
+- `regions.py` — a region is a shard: its own database (`db_name`: `realms_<id>`) on one server, so ticks, players
+  and the tick lock (advisory locks are per database) are its own. `region_dsn` points `ATLAS_REALMS_DSN` at it (host
+  only; libpq takes `PGUSER`/`PGPASSWORD` from the env). `prepare` migrates and seeds (`seed.seed`, the arena's world:
+  `seed.ready_chunks` = baked chunks at the game's zoom + open sea, as `solo.build_world`), `is_ready` checks both.
+  Its world data is `arena/regions.json`'s, so a k8s region must be an arena region.
+- `tick/runner.py --loop --region <id> --no-migrate --heartbeat <file>` is a worker. `api.py --world <ids>` is the
+  stateless world API: `/health` 503 until every region is ready, `/api/world[/<id>]` with each region's tick.
+- `scripts/k8s.py`: `regions` (overlay's `regions.txt` → generated `regions.yaml`: a CNPG `Database` + a one-replica
+  `Recreate` worker per region; `make k8s-regions`), `pin` (images tagged by image id into gitignored `var/k8s/`),
+  `deploy` (CNPG pinned by version + manifest sha256, the out-of-band `realms-db-app` Secret if missing, apply,
+  wait), `smoke`. `db/cnpg/Dockerfile` is the CNPG operand + PostGIS + h3-pg; `Dockerfile` the app image (the repo
+  layout under `/app`, editable install, since `ROOT` paths are repo-relative). CNPG must install `postgis`,
+  `postgis_raster`, `h3`, `h3_postgis` (in that order: h3_postgis needs the raster one) because the app role isn't
+  superuser. Never commit a Secret or a real image tag in the manifests: placeholders `atlas-realms:unpinned`.
+
 `src/atlas_realms/db.py` — psycopg autocommit connection (`ATLAS_REALMS_DSN`) and a forward-only migration runner over
 `src/atlas_realms/migrations/*.sql`, recorded in `schema_migrations`. Never edit an applied migration; add a new file.
 `db/Dockerfile` builds Postgres 16 + PostGIS + h3-pg from `postgres:16-bookworm` (the postgis/postgis images lack
@@ -169,6 +193,8 @@ make db-up     # compose database on 127.0.0.1:5433
 make tick      # one tick against the database (LOOP=1 keeps ticking)
 make test-db   # adds the DB tests, which SKIP unless ATLAS_REALMS_TEST_DSN is set
 make preview   # export var/maps/areas -> var/tiles-areas and serve the solo arena on http://127.0.0.1:8110
+make k8s-up    # the shared world on k3d (Docker, k3d, kubectl, ~4 GB); make k8s-smoke, make k8s-down
+make k8s-regions  # after editing deploy/k8s/overlays/dev/regions.txt
 ```
 
 ## Conventions

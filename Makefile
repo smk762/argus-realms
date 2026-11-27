@@ -3,7 +3,8 @@ UV ?= uv
 TEST_DSN ?= postgresql://atlas:atlas@127.0.0.1:5433/postgres
 
 .PHONY: help install lint format test test-db check static-check atlas-docs bake-plans sim db-up db-down migrate tick tiles static sea-masks preview clean \
-	tiles-pack tiles-fetch arena arena-check arena-painted arena-test arena-dev arena-tiles-test
+	tiles-pack tiles-fetch arena arena-check arena-painted arena-test arena-dev arena-tiles-test \
+	k8s-regions k8s-images k8s-up k8s-deploy k8s-smoke k8s-down
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -108,6 +109,33 @@ arena-tiles-test: arena  ## Painted tiles load from a server without range suppo
 
 arena-dev: arena  ## Build and serve the arena on http://127.0.0.1:8120 (static, with the CSP from _headers)
 	node arena/scripts/serve.mjs arena/dist 8120
+
+# The shared world on Kubernetes (deploy/k8s/, docs/deploy.md "Kubernetes"): Postgres through CloudNativePG, the API,
+# and one tick worker per line of the overlay's regions.txt. `make k8s-up` runs it on k3d (about 4 GB of RAM).
+K8S_CLUSTER ?= realms
+K8S_VERSION ?= $(or $(shell git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null | sed 's/^v//'),0.0.0)+g$(shell git rev-parse --short HEAD)
+
+k8s-regions:  ## Regenerate deploy/k8s/overlays/dev/regions.yaml from its regions.txt (commit both)
+	$(UV) run --no-sync python scripts/k8s.py regions
+
+k8s-images:  ## Build the app and Postgres images, tag them by image id and pin them in var/k8s/
+	docker build -q --build-arg VERSION=$(K8S_VERSION) -t atlas-realms:build .
+	docker build -q -t atlas-realms-db:build db/cnpg
+	$(UV) run --no-sync python scripts/k8s.py pin
+
+k8s-up: k8s-images  ## Create a k3d cluster (if needed), import the images, deploy, wait for every rollout
+	k3d cluster get $(K8S_CLUSTER) >/dev/null 2>&1 || k3d cluster create $(K8S_CLUSTER) --agents 0 --no-lb --k3s-arg '--disable=traefik@server:0' --wait
+	k3d image import -c $(K8S_CLUSTER) $$(cat var/k8s/images.txt)
+	$(UV) run --no-sync python scripts/k8s.py deploy
+
+k8s-deploy:  ## Apply var/k8s/ to the current kubectl context (images already loaded) and wait for it
+	$(UV) run --no-sync python scripts/k8s.py deploy
+
+k8s-smoke:  ## Smoke test the deployed stack: health, ticking, an order, a worker killed mid-game, NetworkPolicy
+	$(UV) run --no-sync python scripts/k8s.py smoke
+
+k8s-down:  ## Remove the k3d cluster, and the database with it
+	k3d cluster delete $(K8S_CLUSTER)
 
 sim:  ## Re-run the combat simulation table from the design doc
 	$(UV) run --no-sync python -m atlas_realms.rules.combat

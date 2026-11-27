@@ -9,6 +9,9 @@ This repo produces two static sites on Cloudflare Pages:
 
 The production branch of both projects is `main`. A deploy with any other `--branch` is a preview.
 
+The shared world (Postgres, the API, the tick workers) is a server deployment instead: §8 runs it on Kubernetes. It
+isn't hosted yet.
+
 ## 1. Machine setup
 
 - **Repo:** clone `github.com/smk762/argus-realms` and branch off `dev`. Older private clones carry history that must not be pushed here; don't add them as remotes.
@@ -46,6 +49,9 @@ Bakes run the argus-atlas Docker image on the GPU host. They need ComfyUI answer
 5. **argus-atlas version:** the bakes use the image built at the docs' commit (§5); this repo's pip pin (`argus-atlas>=0.4.1,<0.5`, for chunk addressing in the game, from the light `argus_atlas.addressing`) is separate. Chunks of different reliefs or builds can't be neighbours, so every area and style is baked with one build.
 
 ## 4. Adding an area to Atlas
+
+[regions.md](regions.md) walks a new region through every stage, from its outline to the shared world; this
+section and §8 hold the details.
 
 1. Give it an entry in `bakes/plans.json` and in `AREA_INFO` (label and frame) in `scripts/build_static.py`, run `make bake-plans`, and bake it into `var/maps/areas/<area>/<style>/<job>/`. bonifacio, seto, salish and cape are already planned this far.
 2. Once it is baked, add it to `AREAS` in the Makefile, with an `OVERVIEW_MIN_<area>` (the lowest zoom shown): that is what publishes it.
@@ -111,3 +117,115 @@ npx wrangler@4 pages deploy arena/dist --project-name=argus-realms --branch=main
   - Each extra zoom level multiplies a style's tiles by about 4, so cap the max zoom per area.
   - If the site outgrows Pages, move tiles to R2 behind the same domain.
 - **Old deployments keep serving.** Every Pages deployment keeps its own hashed URL. When removing content, delete the old deployments too.
+
+## 8. The shared world on Kubernetes
+
+`deploy/k8s/` runs the shared world: Postgres 16 + PostGIS + h3-pg through [CloudNativePG](https://cloudnative-pg.io/),
+the API (`atlas_realms.api --world`), a migrate job, and one tick worker per region. The tiles stay where they are
+(Pages, or object storage): nothing in the cluster serves them.
+
+```
+deploy/k8s/base/           the Cluster (db.yaml), the API with its Service and HPA, the migrate Job, NetworkPolicies
+deploy/k8s/overlays/dev/   regions.txt, and regions.yaml generated from it: each region's Database and tick worker
+deploy/k8s/kind.yaml       CI's kind cluster (Calico, so NetworkPolicy is enforced)
+db/cnpg/Dockerfile         the CloudNativePG operand image plus PostGIS and h3-pg
+Dockerfile                 the app image: API, workers and migrate job
+```
+
+### Run it on a laptop
+
+You need Docker, [k3d](https://k3d.io/) and kubectl, and about 4 GB of free RAM.
+
+```bash
+make k8s-up      # build both images, create the k3d cluster `realms`, import the images, deploy, wait for every rollout
+make k8s-smoke   # health, both regions ticking, a scripted order, a worker killed mid-game, NetworkPolicy
+kubectl -n realms port-forward service/realms-api 8110:80   # then http://127.0.0.1:8110/api/world
+make k8s-down    # remove the cluster, and the database with it
+```
+
+`make k8s-images` tags each image with its own image id (`atlas-realms:<12 hex>`) and writes `var/k8s/`, an overlay
+that pins those tags. The committed manifests only hold the placeholders `atlas-realms:unpinned` and
+`atlas-realms-db:unpinned`, so applying `overlays/dev` directly fails to pull. That is deliberate: nothing runs a
+floating tag. CloudNativePG itself is pinned by version and by the sha256 of its release manifest (`scripts/k8s.py`).
+
+### Why one worker per region
+
+Each region is a shard. It has its own database on the shared server (`realms_<region>`, a CloudNativePG `Database`
+that also installs PostGIS and h3-pg), so it keeps its own ticks, players and battles. The schema stays as it was,
+and so does the tick lock: `pg_try_advisory_xact_lock` is scoped to its database, so one region's slow tick never
+makes another region skip. A worker is a `Deployment` with one replica and the `Recreate` strategy, so even a rollout
+never runs two. If it ever did, the lock would make the second one skip.
+
+A tick is a pure function of the database, the orders and the drand round, and it runs in one transaction. So killing
+a worker loses nothing: its open tick rolls back, the replacement pod loads the same state and orders, and play
+carries on. `make k8s-smoke` checks exactly this. It kills a region's worker in the middle of a game, then checks
+that the tick ids carry on unbroken and the player's walk continues. The API keeps no state either, which is why it
+can scale on CPU while each worker stays at one replica.
+
+### Add a region
+
+(The whole path, from outline to bake to arena to here, is in [regions.md](regions.md).)
+
+1. The region must already be in the arena (`arena/regions.json`, §4): the shared world plays the arena's maps,
+   world manifests and spawns.
+2. Add its id as a line in `deploy/k8s/overlays/dev/regions.txt`, run `make k8s-regions`, and commit both files.
+   `tests/test_k8s.py` fails if `regions.yaml` is stale or names a region the arena doesn't have.
+3. Re-deploy (`make k8s-up`, or `make k8s-deploy` on a cluster that has the images). The new `Database` is created,
+   the migrate job seeds it, and its worker's init container waits until then.
+
+Removing a line removes the worker and the `Database` resource, but not the data: `databaseReclaimPolicy: retain`.
+
+### Secrets
+
+The only secret is the database owner's password: the Secret `realms-db-app` (type `kubernetes.io/basic-auth`, with
+`username: realms` and `password`). It is created out of band and never committed. `scripts/k8s.py deploy` creates
+it with a random password if it is missing, sending it over stdin so it never appears in argv or on disk. To set your
+own:
+
+```bash
+kubectl create namespace realms
+kubectl -n realms create secret generic realms-db-app --type=kubernetes.io/basic-auth \
+  --from-literal=username=realms --from-file=password=<file holding the password>
+```
+
+The pods read it as `PGUSER` and `PGPASSWORD`. `ATLAS_REALMS_DSN` only names the host
+(`host=realms-db-rw port=5432 sslmode=require`), and `atlas_realms.regions.region_dsn` adds each region's `dbname`,
+so the password never sits in a connection string.
+
+### Network
+
+Ingress is denied by default. Postgres admits only pods labelled `realms.dragonhound.dev/db-client=true` (the API,
+the workers and the migrate job), its own instances, and the CloudNativePG operator. The workers admit nothing. They
+may reach the database, DNS, and HTTPS on public addresses (the drand relays); the API and the migrate job may reach
+only the database and DNS. k3s enforces NetworkPolicy itself. kind's default CNI does not, so CI's cluster runs
+Calico, and the smoke test fails if a pod without the label can reach Postgres.
+
+### Health
+
+The API's `/health` reports `starting` (503) until every region's database is migrated and seeded. That is its
+readiness probe, so it gets no traffic before the migrate job has run. Once ready it reports `ok`, or `degraded`
+(still 200) when a region stops answering, so a database restart doesn't restart the API. `/health?checks=0` skips
+the database check. The liveness probe is a TCP check, because `/health` is 503 while the regions are being prepared.
+A worker touches a heartbeat file after every tick attempt, and its liveness probe restarts it after five minutes
+without one.
+
+`/health` is written by hand for now. argus-atlas 0.5 pins `argus-cortex<0.15`, which has no
+`argus_cortex.service.install_health`. Switch to `install_health` once argus-atlas 0.6 (cortex 0.16) is released;
+the route carries a `nosemgrep: handrolled-health` comment that says so.
+
+### CI
+
+The `k8s` job in `.github/workflows/ci.yml` creates a kind cluster with Calico, builds and loads both images, deploys
+with `make k8s-deploy`, and runs `make k8s-smoke`. If anything fails, it dumps pods, events and logs.
+
+### What Compose is still fine for
+
+`compose.yaml` stays the development database for `make db-up`, `make test-db` and `make tick`: one Postgres on a
+laptop, no operator. Compose would also do for a single-host deployment with one or two regions and little
+traffic: one tick loop per region (`python -m atlas_realms.tick.runner --loop --region <id>`) beside one API process.
+Kubernetes earns its place when the world grows in either direction, more regions (each another worker) or more
+players (more API replicas), and when a dead worker should come back by itself.
+
+Out of scope for now: painting fog-of-war on demand as GPU jobs (a queue plus an argus-iris lease), multi-node HA,
+GitOps and managed clouds. [argus-halo](https://github.com/smk762/argus-halo) is the suite's Terraform for hosted
+demos. If the shared world is hosted there, it runs these manifests or their images, pinned the same way.

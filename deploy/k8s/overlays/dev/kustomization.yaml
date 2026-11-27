@@ -1,0 +1,12 @@
+# A laptop or CI cluster (k3d, kind): the base plus one database and one tick worker per line of regions.txt.
+# Its images are placeholders; `make k8s-up` builds them and applies var/k8s/, which pins them (scripts/k8s.py pin).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: realms
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: atlas-realms
+    includeSelectors: false
+resources:
+  - ../../base
+  - regions.yaml

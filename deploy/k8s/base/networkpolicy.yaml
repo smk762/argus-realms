@@ -1,0 +1,129 @@
+# Who may talk to whom. Ingress is denied by default; Postgres admits only pods labelled
+# realms.dragonhound.dev/db-client=true (the API, the tick workers, the migrate job), its own instances and the
+# CloudNativePG operator. The workers admit nothing (no ingress rule selects them). Egress is limited for our own
+# pods: the database, DNS, and for the workers the drand relays over HTTPS on public addresses.
+# scripts/k8s.py smoke checks that an unlabelled pod can't reach Postgres. A CNI that ignores NetworkPolicy (kind's
+# default kindnet) fails that check, which is why CI runs kind with Calico; k3s enforces policies itself.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: realms-db-ingress
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: realms-db
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              realms.dragonhound.dev/db-client: "true"
+      ports:
+        - port: 5432
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: realms-db
+      ports:
+        - port: 5432
+        - port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - port: 5432
+        - port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: realms-api-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: realms-api
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - port: 8110
+---
+# The API and the migrate job: the database and DNS, nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: realms-db-clients-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ["realms-api", "realms-migrate"]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: realms-db
+      ports:
+        - port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# The tick workers: the database, DNS, and HTTPS to public addresses (the drand relays, rules/beacon.py).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: realms-tick-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: realms-tick
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: realms-db
+      ports:
+        - port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16"]
+      ports:
+        - port: 443
+          protocol: TCP
