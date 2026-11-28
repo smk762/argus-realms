@@ -225,3 +225,24 @@ def test_clip_ring_closes_once_and_drops_what_only_touches_the_box():
     assert _clip_ring(square, (0, 0, 3, 3)) == square  # wholly inside: unchanged, closed once
     assert _clip_ring([(3, 0), (4, 0), (4, 3), (3, 3), (3, 0)], (0, 0, 3, 3)) == []  # touches the east edge only
     assert _clip_ring([(3, 3), (4, 3), (4, 4), (3, 3)], (0, 0, 3, 3)) == []  # touches a corner
+
+
+# --- `python -m atlas_realms.seed` arguments: spawn points south of the equator, in either form ---
+
+
+def test_a_southern_spawn_parses_with_or_without_the_equals_sign():
+    from atlas_realms.seed import parse_args
+
+    a = parse_args(
+        ["m.json", "o.geojson", "--spawn", "-33.8,151.2", "--spawn=-41.2865,174.7762", "--spawn", "64.1,-21.9"]
+    )
+    assert a.spawn == [(-33.8, 151.2), (-41.2865, 174.7762), (64.1, -21.9)]
+
+
+@pytest.mark.parametrize("bad", ["-33.8", "1,2,3", "x,y", "95,0"])
+def test_a_spawn_must_be_one_lat_lng_point(bad, capsys):
+    from atlas_realms.seed import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["m.json", "o.geojson", f"--spawn={bad}"])
+    assert "--spawn" in capsys.readouterr().err

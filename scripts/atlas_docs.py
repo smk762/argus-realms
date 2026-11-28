@@ -28,6 +28,7 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -180,23 +181,32 @@ def import_docs(repo: Path, ref: str) -> dict:
             if path and path not in images:
                 images[path] = bytes(_git(repo, "show", f"{commit}:{path}", binary=True))
     version = atlas_version(repo, commit)
-    for old in VENDOR.rglob("*") if VENDOR.exists() else []:
-        if old.is_file():
-            old.unlink()
-    (VENDOR / "img").mkdir(parents=True, exist_ok=True)
-    for doc, data in texts.items():
-        (VENDOR / f"{doc.id}.md").write_bytes(data)
-        files[doc.path] = {"as": f"{doc.id}.md", "sha256": sha256_hex(data)}
-    for path, data in images.items():
-        name = PurePosixPath(path).name
-        (VENDOR / "img" / name).write_bytes(data)
-        files[path] = {"as": f"img/{name}", "sha256": sha256_hex(data)}
-    record = {
-        "atlas": {"repo": REPO, "commit": commit, "version": version, "ref": ref},
-        "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "files": files,
-    }
-    RECORD.write_text(json.dumps(record, indent=1) + "\n")
+    # Written into a sibling and swapped in whole, record included: a failure part-way leaves the old import as it was.
+    new = VENDOR.with_name(f".{VENDOR.name}.new")
+    shutil.rmtree(new, ignore_errors=True)
+    try:
+        (new / "img").mkdir(parents=True)
+        for doc, data in texts.items():
+            (new / f"{doc.id}.md").write_bytes(data)
+            files[doc.path] = {"as": f"{doc.id}.md", "sha256": sha256_hex(data)}
+        for path, data in images.items():
+            name = PurePosixPath(path).name
+            (new / "img" / name).write_bytes(data)
+            files[path] = {"as": f"img/{name}", "sha256": sha256_hex(data)}
+        record = {
+            "atlas": {"repo": REPO, "commit": commit, "version": version, "ref": ref},
+            "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "files": files,
+        }
+        (new / RECORD.relative_to(VENDOR)).write_text(json.dumps(record, indent=1) + "\n")
+        old = VENDOR.with_name(f".{VENDOR.name}.old")
+        shutil.rmtree(old, ignore_errors=True)
+        if VENDOR.exists():
+            VENDOR.rename(old)
+        new.rename(VENDOR)
+        shutil.rmtree(old, ignore_errors=True)
+    finally:
+        shutil.rmtree(new, ignore_errors=True)
     return record
 
 
@@ -300,46 +310,63 @@ def render(record: dict, vendor: Path = VENDOR) -> Rendered:
     toc = []
     parts = []
 
-    def resolve(href: str, doc: Doc) -> tuple[str, bool]:
-        """(new href, opens off-site)."""
-        url, _, frag = href.partition("#")
-        if not url:
-            return f"#{doc.id}-{slug(frag)}" if frag else f"#{doc.id}", False
-        path = repo_path(href, doc.path)
-        if path in by_path:  # another imported doc: an anchor on this page
-            target = by_path[path]
-            return (f"#{target.id}-{slug(frag)}" if frag else f"#{target.id}"), False
-        if path:  # anything else in argus-atlas, pinned to the imported commit (GitHub redirects blob to tree)
-            return f"{GITHUB}/blob/{commit}/{path}" + (f"#{frag}" if frag else ""), True
-        host = re.match(r"^https?://([^/:]+)", url)
-        return href, bool(host) and not _family(host.group(1))
-
+    # Headings first, over every doc, so each id is unique on the page: the docs' own ids are reserved, a heading
+    # that would land on one (doc `a`, "B C" vs doc `a-b`, "C") gets a suffix, and links resolve to what was assigned.
+    taken = {d.id for d in DOCS}
+    assigned: dict[tuple[str, str], str] = {}  # (doc id, GitHub's in-doc anchor) -> the id on this page
+    parsed: list[tuple[Doc, list, list[tuple[str, str]], bool]] = []
     for doc in DOCS:
         text = (vendor / record["files"][doc.path]["as"]).read_text()
-        text = BADGES.sub("", LEAD_HTML.sub("", text))
-        tokens = md.parse(text)
+        tokens = md.parse(BADGES.sub("", LEAD_HTML.sub("", text)))
         heads: list[tuple[str, str]] = []
         seen: dict[str, int] = {}
         first = True
         titled = False  # the doc's first heading is an H1, which then carries the section's id
         for i, tok in enumerate(tokens):
-            if tok.type == "heading_open":
-                title = tokens[i + 1].content
-                level = int(tok.tag[1])
-                if level == 1 and first:
-                    anchor = doc.id  # the doc's own title names its section
-                    titled = True
-                else:
-                    base = f"{doc.id}-{slug(title)}"
-                    n = seen.get(base, 0)
-                    seen[base] = n + 1
-                    anchor = base if n == 0 else f"{base}-{n}"
-                    if level == 2:
-                        heads.append((anchor, re.sub(r"`", "", title)))
-                first = False
-                tok.attrSet("id", anchor)
-                anchors.add(anchor)
-                tok.tag = tokens[i + 2].tag = f"h{min(level + 1, 6)}"  # the page's h1 is its own title
+            if tok.type != "heading_open":
+                continue
+            title = tokens[i + 1].content
+            level = int(tok.tag[1])
+            if level == 1 and first:
+                anchor = doc.id  # the doc's own title names its section
+                titled = True
+            else:
+                base = slug(title)
+                n = seen.get(base, 0)
+                seen[base] = n + 1
+                local = base if n == 0 else f"{base}-{n}"
+                anchor, k = f"{doc.id}-{local}", 0
+                while anchor in taken:
+                    k += 1
+                    anchor = f"{doc.id}-{local}-x{k}"
+                assigned.setdefault((doc.id, local), anchor)
+                taken.add(anchor)
+                if level == 2:
+                    heads.append((anchor, re.sub(r"`", "", title)))
+            first = False
+            tok.attrSet("id", anchor)
+            anchors.add(anchor)
+            tok.tag = tokens[i + 2].tag = f"h{min(level + 1, 6)}"  # the page's h1 is its own title
+        parsed.append((doc, tokens, heads, titled))
+
+    def to(doc: Doc, frag: str) -> str:
+        return "#" + (assigned.get((doc.id, slug(frag)), f"{doc.id}-{slug(frag)}") if frag else doc.id)
+
+    def resolve(href: str, doc: Doc) -> tuple[str, bool]:
+        """(new href, opens off-site)."""
+        url, _, frag = href.partition("#")
+        if not url:
+            return to(doc, frag), False
+        path = repo_path(href, doc.path)
+        if path in by_path:  # another imported doc: an anchor on this page
+            return to(by_path[path], frag), False
+        if path:  # anything else in argus-atlas, pinned to the imported commit (GitHub redirects blob to tree)
+            return f"{GITHUB}/blob/{commit}/{path}" + (f"#{frag}" if frag else ""), True
+        host = re.match(r"^https?://([^/:]+)", url)
+        return href, bool(host) and not _family(host.group(1))
+
+    for doc, tokens, heads, titled in parsed:
+        for tok in tokens:
             if tok.type != "inline" or not tok.children:
                 continue
             kids: list = []

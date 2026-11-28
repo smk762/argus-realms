@@ -240,9 +240,11 @@ def create_world_app(regions: list[str]) -> FastAPI:
             "started_at": started_at,
             "regions": list(regions),
         }
-        if ready != set(regions):
-            return JSONResponse({**body, "status": "starting", "checks": {}}, status_code=503)
-        results = {} if checks.lower() in ("0", "false", "no", "off") else {r: check(r) for r in regions}
+        liveness = checks.lower() in ("0", "false", "no", "off")
+        if ready != set(regions):  # not ready yet, but alive: only readiness waits for the regions
+            starting = {**body, "status": "starting", "checks": {}}
+            return JSONResponse(starting, status_code=200 if liveness else 503, headers={"Cache-Control": "no-store"})
+        results = {} if liveness else {r: check(r) for r in regions}
         status = "degraded" if any(not c["ok"] for c in results.values()) else "ok"
         return JSONResponse({**body, "status": status, "checks": results}, headers={"Cache-Control": "no-store"})
 

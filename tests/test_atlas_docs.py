@@ -172,6 +172,25 @@ def test_the_record_catches_an_edited_extra_or_forbidden_file(atlas: Path, vendo
         ad.load_record(vendor)
 
 
+def test_a_failed_import_leaves_the_previous_one_whole(atlas: Path, vendor: Path, monkeypatch) -> None:
+    ad.import_docs(atlas, "HEAD")
+    before = {p.relative_to(vendor): p.read_bytes() for p in vendor.rglob("*") if p.is_file()}
+    calls, real = [], ad.sha256_hex
+
+    def fail_on_third(data: bytes) -> str:
+        calls.append(data)
+        if len(calls) == 3:
+            raise OSError("disk full")
+        return real(data)
+
+    monkeypatch.setattr(ad, "sha256_hex", fail_on_third)
+    with pytest.raises(OSError, match="disk full"):
+        ad.import_docs(atlas, "HEAD")
+    assert {p.relative_to(vendor): p.read_bytes() for p in vendor.rglob("*") if p.is_file()} == before
+    assert sorted(p.name for p in vendor.parent.iterdir() if p.name.startswith(".")) == []  # no half-written copy
+    ad.load_record(vendor)
+
+
 # --- render ---------------------------------------------------------------------------------------------------
 
 
@@ -304,6 +323,27 @@ def test_the_record_refuses_a_doc_outside_the_allowlist_or_vendored_elsewhere(at
     (vendor / "sync.json").write_text(json.dumps(moved))
     with pytest.raises(ad.DocsError, match="vendors docs/cli.md as '../outside.md'"):
         ad.load_record(vendor)
+
+
+def test_heading_ids_are_unique_across_docs(atlas: Path, vendor: Path, monkeypatch) -> None:
+    """Doc `a` heading "B C" and doc `a-b` heading "C" would both be `a-b-c`; a heading can't take a doc's own id."""
+    docs = [ad.Doc("a", "docs/a.md", "A"), ad.Doc("a-b", "docs/a-b.md", "A B"), ad.Doc("a-b-c", "docs/c.md", "C")]
+    texts = {
+        "docs/a.md": "# A\n\n## B C\n\n## B\n\n[to C](a-b.md#c)\n",
+        "docs/a-b.md": "Intro\n\n## C\n\n[mine](#c)\n",
+        "docs/c.md": "## Last\n",
+    }
+    for path, text in texts.items():
+        (vendor / path.removeprefix("docs/")).parent.mkdir(parents=True, exist_ok=True)
+        (vendor / path.removeprefix("docs/")).write_text(text)
+    monkeypatch.setattr(ad, "DOCS", docs)
+    record = {"atlas": {"commit": COMMIT}, "files": {d.path: {"as": d.path.removeprefix("docs/")} for d in docs}}
+    html = ad.render(record, vendor).html
+    ids = re.findall(r' id="([^"]+)"', html)
+    assert len(ids) == len(set(ids)), ids
+    assert "a-b" in ids and "a-b-c" in ids  # the docs keep their own ids
+    mine = re.search(r'<h3 id="([^"]+)">C</h3>', html).group(1)
+    assert mine != "a-b-c" and html.count(f'href="#{mine}"') == 2  # both links reach doc a-b's "C"
 
 
 def test_a_setext_title_is_not_doubled(atlas: Path, vendor: Path) -> None:

@@ -110,3 +110,18 @@ def test_one_client_cannot_fill_the_arena(client, monkeypatch):
     assert client.get(f"/api/solo/{first}/state").status_code == 200
     other = TestClient(client.app, client=("203.0.113.9", 50000))
     assert other.post("/api/solo", json={}).status_code == 200  # a slot was left for somebody else
+
+
+def test_world_health_is_alive_while_starting_but_not_ready(monkeypatch):
+    """`?checks=0` is the liveness probe: a region still migrating must not get the API restarted."""
+    import atlas_realms.api as api
+
+    def unreachable(region):
+        raise ConnectionError("not yet")
+
+    monkeypatch.setattr(api, "region_ready", unreachable)
+    client = TestClient(api.create_world_app(["cook-strait"]))  # no `with`: the readiness watcher never runs
+    r = client.get("/health")
+    assert r.status_code == 503 and r.json()["status"] == "starting"
+    r = client.get("/health?checks=0")
+    assert r.status_code == 200 and r.json()["status"] == "starting"
