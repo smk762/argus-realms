@@ -260,6 +260,12 @@
   // (areas.json `bake`), each command linked to its section of the docs page, /docs/ (`docs`, anchors checked by the build).
   const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), attrs, text == null ? {} : { textContent: text });
   const several = (v) => (v || []).join(" / ");
+  // A docs link, or plain text when the area's manifest has no anchor for it (never href="undefined").
+  const docLink = (content, href) => {
+    const node = href ? el("a", null, { href }) : el("span");
+    node.append(content);
+    return node;
+  };
   function recipeOf(a, name) {
     const b = (a.bake || {})[name];
     if (!b || !b.recipe?.length) return "";
@@ -274,9 +280,7 @@
   }
   function step(a, cmd, text, href, extra) {
     const li = el("li");
-    const link = el("a", null, { href });
-    link.append(el("code", `argus-atlas ${cmd}`));
-    li.append(link, ` ${text}`);
+    li.append(docLink(el("code", `argus-atlas ${cmd}`), href), ` ${text}`);
     if (extra) li.append(...extra);
     return li;
   }
@@ -296,7 +300,7 @@
     const one = b.chunks === 1;
     steps.push(step(a, "chunk", `painted ${one ? "one chunk" : `${b.chunks} chunks`} (z${several(c.zoom)} tiles, ` +
       `${several(c.size)} px plus a ${several(c.margin)} px margin)${one ? "" : ", each with its baked neighbours in view,"} and `,
-      d.chunk, [el("a", b.aligned ? `the alignment gate passed ${one ? "it" : "every one"}` : "the alignment gate", { href: d.gate }), "."]));
+      d.chunk, [docLink(b.aligned ? `the alignment gate passed ${one ? "it" : "every one"}` : "the alignment gate", d.gate), "."]));
     if (cmds.has("labels")) steps.push(step(a, "labels", "added the place names, drawn on top in a real font.", d.labels));
     steps.push(el("li", "This site's export joined the chunks into one tile tree, with coarser zooms shrunk from them."));
     $("made-steps").replaceChildren(...steps);
@@ -313,9 +317,9 @@
     build.replaceChildren();
     if (built.length) {
       build.append(`Baked with argus-atlas ${built.map((g) => `${g.version} (${g.commit.slice(0, 7)})`).join(", ")}: `,
-        el("a", "read its docs", { href: d.overview }), ".");
+        docLink("read its docs", d.overview), ".");
     } else {
-      build.append("Baked with an argus-atlas build that recorded no version. ", el("a", "The argus-atlas docs", { href: d.overview }), ".");
+      build.append("Baked with an argus-atlas build that recorded no version. ", docLink("The argus-atlas docs", d.overview), ".");
     }
   }
 

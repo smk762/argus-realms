@@ -31,6 +31,16 @@ def test_prepare_seeds_a_region_and_is_safe_to_rerun(db_url):
         assert c.execute("SELECT owner_id FROM hexes WHERE h3 = %s", (land,)).fetchone()[0] == uid
 
 
+def test_a_fresh_database_leaves_the_connection_usable(db_url):
+    """On a fresh database the readiness check must not leave a non-autocommit connection aborted (migrate is next)."""
+    with psycopg.connect(db_url, autocommit=True) as c:
+        c.execute("DROP TABLE schema_migrations")
+    with psycopg.connect(db_url) as c:
+        assert not regions.is_ready(c)
+        assert c.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+        assert c.execute("SELECT 1").fetchone()[0] == 1
+
+
 def test_db_names_need_no_quoting():
     assert regions.db_name("cook-strait") == "realms_cook_strait"
     with pytest.raises(ValueError):

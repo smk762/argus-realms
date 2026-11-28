@@ -1,6 +1,7 @@
 """The Kubernetes manifests (deploy/k8s/): what must hold without a cluster. CI's `k8s` job deploys them on kind and
 runs the smoke test (scripts/k8s.py smoke) for what only a cluster can show."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -66,11 +67,53 @@ def test_render_refuses_a_region_the_arena_doesnt_have():
         k8s.render(["cook-strait", "atlantis"])
 
 
+SECRETISH = re.compile(r"pass(word)?|secret|token|credential", re.I)
+
+
+def secret_leaks(node, where: str = "") -> list[str]:
+    """Literal credentials anywhere in a manifest: an env var named like a password with a `value` (only `valueFrom`
+    with a `secretKeyRef` is allowed), or any mapping key named like one holding a literal (ConfigMap data and the like).
+    """
+    out = []
+    if isinstance(node, dict):
+        name = node.get("name")
+        literal = "value" in node or ("valueFrom" in node and "secretKeyRef" not in node["valueFrom"])
+        if isinstance(name, str) and SECRETISH.search(name) and literal:
+            out.append(f"{where}: {name} is not from a secretKeyRef")
+        for k, v in node.items():
+            if (
+                isinstance(k, str)
+                and SECRETISH.search(k)
+                and isinstance(v, (str, int, float))
+                and not isinstance(v, bool)
+            ):
+                out.append(f"{where}.{k}: a literal")
+            out += secret_leaks(v, f"{where}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            out += secret_leaks(v, f"{where}[{i}]")
+    return out
+
+
 def test_no_secret_is_committed():
     """The database owner's password is created out of band (scripts/k8s.py deploy, docs/deploy.md)."""
     assert of("Secret") == []
-    text = "\n".join(f.read_text() for f in K8S.rglob("*.yaml"))
-    assert "PGPASSWORD" in text and "password:" not in text.replace("key: password", "")
+    manifests = docs()
+    assert "PGPASSWORD" in "\n".join(f.read_text() for f in K8S.rglob("*.yaml"))  # the env var exists, from a Secret
+    assert [leak for d in manifests for leak in secret_leaks(d, d.get("metadata", {}).get("name", d["kind"]))] == []
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        {"env": [{"name": "PGPASSWORD", "value": "hunter2"}]},
+        {"env": [{"name": "POSTGRES_PASSWORD", "valueFrom": {"configMapKeyRef": {"name": "c", "key": "p"}}}]},
+        {"kind": "ConfigMap", "data": {"PGPASSWORD": "hunter2"}},
+        {"kind": "ConfigMap", "data": {"db_password": "hunter2"}},
+    ],
+)
+def test_the_secret_check_catches_a_literal_credential(doc):
+    assert secret_leaks(doc)
 
 
 def test_every_pod_is_unprivileged_bounded_and_pinned_at_deploy():
@@ -142,3 +185,85 @@ def test_the_db_image_tag_starts_with_its_postgres_version():
 
 def test_the_operator_is_pinned_by_version_and_digest():
     assert k8s.CNPG_VERSION in k8s.CNPG_URL and len(k8s.CNPG_SHA256) == 64
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("atlas-realms:0123456789ab", ("newTag", "0123456789ab")),
+        ("localhost:5000/atlas-realms:0123456789ab", ("newTag", "0123456789ab")),
+        ("registry.example:5000/team/atlas-realms@sha256:" + "a" * 64, ("digest", "sha256:" + "a" * 64)),
+    ],
+)
+def test_the_image_tag_is_after_the_last_colon_past_the_registry(ref, expected):
+    assert k8s.image_ref(ref) == expected
+    pinned = yaml.safe_load(k8s.pinned_kustomization(OVERLAY, k8s.PINNED, ref, "atlas-realms-db:x"))
+    assert pinned["images"] == [{"name": "atlas-realms", expected[0]: expected[1]}]
+
+
+@pytest.mark.parametrize("ref", ["atlas-realms", "localhost:5000/atlas-realms"])
+def test_an_image_without_a_tag_is_refused(ref):
+    with pytest.raises(SystemExit, match="no tag"):
+        k8s.image_ref(ref)
+
+
+@pytest.mark.parametrize(("body", "expected"), [(b"<html>502 Bad Gateway</html>", "<html>502"), (b"", "")])
+def test_a_non_json_error_body_still_returns_the_status(monkeypatch, body, expected):
+    import io
+    import urllib.error
+
+    def refuse(url, timeout):
+        raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, io.BytesIO(body))
+
+    monkeypatch.setattr(k8s.urllib.request, "urlopen", refuse)
+    status, data = k8s.http_json("http://127.0.0.1:1/health")
+    assert status == 502 and data["raw"].startswith(expected)
+
+
+def test_a_failed_migration_fails_at_once_with_its_logs(monkeypatch):
+    calls = []
+
+    def fake(*args, **kw):
+        calls.append(args)
+        if "logs" in args:
+            return "relation already exists\n"
+        return '[{"type":"Failed","status":"True","reason":"BackoffLimitExceeded"}]'
+
+    monkeypatch.setattr(k8s, "kubectl", fake)
+    monkeypatch.setattr(k8s.time, "sleep", lambda s: pytest.fail("polled again after the job had failed"))
+    with pytest.raises(SystemExit, match="(?s)BackoffLimitExceeded.*relation already exists"):
+        k8s.wait_job("realms-migrate", 900)
+    monkeypatch.setattr(k8s, "kubectl", lambda *a, **kw: '[{"type":"Complete","status":"True"}]')
+    k8s.wait_job("realms-migrate", 900)
+
+
+def test_a_probe_that_times_out_fails_cleanly_and_removes_its_pod(monkeypatch):
+    deleted = []
+
+    def slow(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(k8s.subprocess, "run", slow)
+    monkeypatch.setattr(k8s, "kubectl", lambda *a, **kw: deleted.append(a) or "")
+    first = k8s.reach("np-probe-stranger", False, "atlas-realms:x")
+    assert first.startswith("timed out")  # never "refused": a timeout is not a verdict
+    k8s.reach("np-probe-stranger", False, "atlas-realms:x")
+    pods = [a[a.index("pod") + 1] for a in deleted]
+    assert all(a[:4] == ("-n", k8s.NAMESPACE, "delete", "pod") for a in deleted)
+    assert len(pods) == 2 and pods[0] != pods[1]  # unique names: a leftover pod can't break the next run
+
+
+def test_the_smoke_verdicts_survive_python_O(monkeypatch):
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(k8s))
+    assert not [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Assert)]
+    with pytest.raises(SystemExit, match="FAILED: ticks lost"):
+        k8s.check(False, "ticks lost")
+
+
+def test_no_worker_pod_is_a_clear_failure(monkeypatch):
+    monkeypatch.setattr(k8s, "kubectl", lambda *a, **kw: "")
+    with pytest.raises(SystemExit, match="no tick worker pod for region cook-strait"):
+        k8s.worker_pods("cook-strait")

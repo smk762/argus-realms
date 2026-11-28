@@ -13,6 +13,7 @@ every land hex is tier 1, flat, for now.
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import h3
@@ -193,13 +194,35 @@ def seed(conn: psycopg.Connection, manifest: dict, outline: Path, spawns: list[t
     return len(rows)
 
 
-def main() -> None:
+def spawn_point(text: str) -> tuple[float, float]:
+    """`lat,lng` -> (lat, lng), for --spawn."""
+    try:
+        lat, lng = (float(v) for v in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not lat,lng") from None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a point on Earth")
+    return lat, lng
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("manifest", type=Path)
     p.add_argument("outline", type=Path)
-    p.add_argument("--spawn", action="append", default=[], help="lat,lng of a spawn zone (repeatable)")
-    a = p.parse_args()
-    spawns = [tuple(float(v) for v in s.split(",")) for s in a.spawn]
+    p.add_argument(
+        "--spawn", action="append", default=[], type=spawn_point, help="lat,lng of a spawn zone (repeatable)"
+    )
+    args = list(sys.argv[1:] if argv is None else argv)
+    # argparse reads `--spawn -41.3,174.8` (south of the equator) as an option: join it into `--spawn=-41.3,174.8`.
+    for i in range(len(args) - 2, -1, -1):
+        if args[i] == "--spawn" and args[i + 1].startswith("-"):
+            args[i : i + 2] = [f"--spawn={args[i + 1]}"]
+    return p.parse_args(args)
+
+
+def main() -> None:
+    a = parse_args()
+    spawns = a.spawn
     manifest = json.loads(a.manifest.read_text())
     with connect() as conn:
         migrate(conn)

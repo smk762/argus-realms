@@ -70,6 +70,37 @@ def test_a_changed_archive_is_refused(tmp_path):
     assert not (tmp_path / "restored").exists()
 
 
+def test_an_interrupted_download_leaves_nothing_in_the_cache(tmp_path, monkeypatch):
+    archive, _, lock = _packed(tmp_path)
+    data = archive.read_bytes()
+    cache = tmp_path / "cache"
+
+    class Dropped:
+        def __init__(self, cut: int | None):
+            self.left, self.cut = data, cut
+
+        def read(self, n=-1):
+            if self.cut is not None and len(data) - len(self.left) >= self.cut:
+                raise ConnectionResetError("dropped")
+            n = len(self.left) if n < 0 else min(n, 1024)
+            chunk, self.left = self.left[:n], self.left[n:]
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(tr.urllib.request, "urlopen", lambda url, timeout: Dropped(cut=4096))
+    with pytest.raises(ConnectionResetError):
+        tr.fetch(AREAS, tmp_path / "restored", lock, cache)
+    assert list(cache.iterdir()) == []  # no truncated archive for the next run to trust
+    monkeypatch.setattr(tr.urllib.request, "urlopen", lambda url, timeout: Dropped(cut=None))
+    tr.fetch(AREAS, tmp_path / "restored", lock, cache)
+    assert [p.name for p in cache.iterdir()] == [archive.name]
+
+
 def test_a_missing_area_or_region_is_refused(tmp_path):
     archive, _, lock = _packed(tmp_path)
     with pytest.raises(SystemExit, match="no tiles for: atlantis"):
@@ -85,11 +116,13 @@ def test_two_sets_are_never_mixed(tmp_path):
         tr.fetch(AREAS, tmp_path / "restored", lock, archive.parent)
 
 
-def _arena(dist: Path, skip: str = "", placeholder: bool = False) -> Path:
+def _arena(dist: Path, skip: str = "", placeholder: bool | None = False, extra: str = "") -> Path:
     (dist / "regions").mkdir(parents=True)
     for r in tr.regions():
         styles = json.loads((tr.ROOT / r["manifest"]).read_text())["styles"]
-        built = {"styles": styles, "placeholder": placeholder}
+        built = {"styles": styles + ([{"name": extra}] if extra else [])}
+        if placeholder is not None:
+            built["placeholder"] = placeholder
         (dist / "regions" / f"{r['id']}.json").write_text(json.dumps(built))
         for s in styles:
             f = dist / "tiles" / r["id"] / s["name"] / "8" / "1" / "2.webp"
@@ -105,6 +138,12 @@ def test_a_partly_painted_arena_is_refused(tmp_path):
         tr.check_arena(_arena(tmp_path / "partial", skip="antique"))
     with pytest.raises(SystemExit, match="all tiles"):
         tr.check_arena(_arena(tmp_path / "placeholder", placeholder=True))
+
+
+@pytest.mark.parametrize("placeholder", [False, None])
+def test_a_listed_but_unpainted_style_is_refused_with_or_without_the_placeholder_key(tmp_path, placeholder):
+    with pytest.raises(SystemExit, match="listed but not painted: unpainted"):
+        tr.check_arena(_arena(tmp_path / "arena", placeholder=placeholder, extra="unpainted"))
 
 
 def test_a_tile_set_tag_is_never_the_version(tmp_path):

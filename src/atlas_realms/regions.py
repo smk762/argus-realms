@@ -70,10 +70,12 @@ def region_dsn(region: str, base: str | None = None) -> str:
 
 
 def is_ready(conn: psycopg.Connection) -> bool:
-    """Every migration applied and the world seeded."""
+    """Every migration applied and the world seeded. Its own transaction (rolled back on a fresh database), so it
+    never leaves a connection aborted or idle in a transaction, autocommit or not."""
     try:
-        done = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
-        seeded = conn.execute("SELECT EXISTS (SELECT 1 FROM hexes)").fetchone()[0]
+        with conn.transaction():
+            done = {r[0] for r in conn.execute("SELECT name FROM schema_migrations")}
+            seeded = conn.execute("SELECT EXISTS (SELECT 1 FROM hexes)").fetchone()[0]
     except psycopg.errors.UndefinedTable:
         return False
     return done >= {name for name, _ in migration_files()} and seeded

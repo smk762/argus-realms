@@ -218,10 +218,16 @@ def test_sea_fill_refuses_to_write_over_its_source(tmp_path, out):
 
     manifest = _sea_export(tmp_path / "tiles")
     (tmp_path / "link").symlink_to(tmp_path / "tiles")
-    before = sorted((tmp_path / "tiles").rglob("*.png"))
+
+    def snapshot() -> dict:  # contents and mtimes, not just names: a tile rewritten in place keeps its path
+        return {
+            p: (p.read_bytes(), p.stat().st_mtime_ns) for p in sorted((tmp_path / "tiles").rglob("*")) if p.is_file()
+        }
+
+    before = snapshot()
     with pytest.raises(ValueError, match="overlaps"):
         sea_fill.fill(tmp_path / "tiles", "antique", manifest, {(1, 1, 1)}, "#143c78", tmp_path / out)
-    assert sorted((tmp_path / "tiles").rglob("*.png")) == before
+    assert snapshot() == before
 
 
 # -- scripts/zoom_continuity.py ----------------------------------------------------------------------

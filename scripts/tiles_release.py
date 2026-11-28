@@ -82,9 +82,14 @@ def pack(areas: list[str], tiles: Path, out: Path, lock: Path) -> dict:
     return record
 
 
+def _matches(archive: Path, record: dict) -> bool:
+    return archive.stat().st_size == record["bytes"] and _sha256(archive) == record["sha256"]
+
+
 def unpack(archive: Path, record: dict, tiles: Path) -> None:
-    if archive.stat().st_size != record["bytes"] or _sha256(archive) != record["sha256"]:
-        sys.exit(f"{archive.name} does not match {LOCK.name}")
+    if not _matches(archive, record):
+        archive.unlink()  # a bad cached copy would be refused on every run: the next one downloads it again
+        sys.exit(f"{archive.name} does not match {LOCK.name} (removed from the cache)")
     tiles.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive) as tar:
         tar.extractall(tiles, filter="data")
@@ -103,8 +108,13 @@ def fetch(areas: list[str], tiles: Path, lock: Path, cache: Path) -> None:
     archive = cache / record["asset"]
     if not archive.exists():
         url = f"{RELEASES}/{record['tag']}/{record['asset']}"
-        with urllib.request.urlopen(url, timeout=60) as res, archive.open("wb") as f:
-            shutil.copyfileobj(res, f)
+        part = archive.with_name(archive.name + ".part")  # only a complete download takes the cache name
+        try:
+            with urllib.request.urlopen(url, timeout=60) as res, part.open("wb") as f:
+                shutil.copyfileobj(res, f)
+            part.replace(archive)
+        finally:
+            part.unlink(missing_ok=True)
     unpack(archive, record, tiles)
 
 
@@ -118,7 +128,7 @@ def check_arena(dist: Path) -> None:
         painted = {s for s in have if any((dist / "tiles" / r["id"] / s).rglob("*.webp"))}
         if built.get("placeholder") or want - painted:
             problems.append(f"{r['id']}: missing {', '.join(sorted(want - painted)) or 'all tiles'}")
-        if built.get("placeholder") is False and have - painted:
+        if not built.get("placeholder") and have - painted:
             problems.append(f"{r['id']}: listed but not painted: {', '.join(sorted(have - painted))}")
     if problems:
         sys.exit("arena is only partly painted:\n" + "\n".join(problems))
