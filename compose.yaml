@@ -1,6 +1,6 @@
 # Local development database. `make db-up`, then `make migrate`.
 services:
-  db:
+  db:  # nosemgrep: service-peer-label  local dev database (postgres + PostGIS + h3-pg), not a suite service
     build: db
     image: atlas-realms-db:dev
     environment:
